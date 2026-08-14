@@ -8,6 +8,16 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [1.01] - 2026-08-14
+
+### Added
+- [CLAUDE.md](CLAUDE.md) - guidance for Claude Code (and similar coding
+  agents) working in this repository: common commands, the versioning
+  convention, and the cross-file architecture notes (bootstrap/page model,
+  `getSetting()` caching gotcha, theme resolution, admin RBAC, the i18n
+  and product/option translation systems, payment gateway capture
+  security, cart stock-scoping security, and settings save patterns).
+
 ## [1.00] - 2026-08-14
 
 Initial tagged release - the project in its state at the point versioning
