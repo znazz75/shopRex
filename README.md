@@ -1,5 +1,7 @@
 # shopRex
 
+**English** | [Deutsch](README.de.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![PHP](https://img.shields.io/badge/PHP-8.0%2B-777bb4)
 ![MySQL](https://img.shields.io/badge/MySQL-5.7%2B%20%2F%20MariaDB%2010.3%2B-4479a1)
@@ -508,7 +510,7 @@ config/                DB + site configuration; installed.php is generated, not 
 includes/              Shared PHP: bootstrap, Cart, Mailer, PaymentGateway, ImageProcessor (GD
                        cropping), SimplePdf + InvoiceGenerator, GdprTools + GdprCleanup, i18n
                        (__()/language files), category/menu tree + theme helpers
-includes/lang/en.php, de.php   Translation strings (add a language: drop a new xx.php here)
+includes/lang/en.php, de.php, fr.php   Translation strings (add a language: drop a new xx.php here)
 assets/                Storefront CSS/JS/images
 themes/                Installable layout packages (see Frontend theme above) - themes/default/,
                        themes/sidebar/, and any you add; each is just a theme.json plus optional
