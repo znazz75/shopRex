@@ -6,19 +6,29 @@ $submitted = false;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf();
     $email = trim($_POST['email'] ?? '');
+    $rateLimitId = loginAttemptIdentifier($email);
 
-    $stmt = db()->prepare("SELECT * FROM customers WHERE email = ? AND status = 'active'");
-    $stmt->execute([$email]);
-    $customer = $stmt->fetch();
+    // Also throttled (not just login) - otherwise this form is an
+    // unlimited email-bombing / token-guessing surface on its own, even
+    // though the "check your email" response never confirms the address exists.
+    if (!isRateLimited($rateLimitId, 5, 15)) {
+        recordFailedLoginAttempt($rateLimitId);
+
+        $stmt = db()->prepare("SELECT * FROM customers WHERE email = ? AND status = 'active'");
+        $stmt->execute([$email]);
+        $customer = $stmt->fetch();
+
+        if ($customer) {
+            $token = bin2hex(random_bytes(32));
+            db()->prepare('UPDATE customers SET password_reset_token = ?, password_reset_expires_at = DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id = ?')
+                ->execute([$token, $customer['id']]);
+            Mailer::sendPasswordReset($customer, $token);
+        }
+    }
 
     // Always show the same "check your email" message whether or not the
-    // address exists - avoids leaking which emails have accounts.
-    if ($customer) {
-        $token = bin2hex(random_bytes(32));
-        db()->prepare('UPDATE customers SET password_reset_token = ?, password_reset_expires_at = DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id = ?')
-            ->execute([$token, $customer['id']]);
-        Mailer::sendPasswordReset($customer, $token);
-    }
+    // address exists (or the request was throttled) - avoids leaking which
+    // emails have accounts.
     $submitted = true;
 }
 

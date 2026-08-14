@@ -177,6 +177,14 @@ try {
     redirect(rtrim(SITE_URL, '/') . '/cart.php');
 }
 
+// Remember that *this* browser session is the one that just placed this
+// order - order_confirmation.php uses it to show a guest their own order
+// without requiring an account, without trusting the order number alone
+// (which is otherwise guessable/enumerable - see docs/SECURITY_AUDIT.md
+// finding #4). Survives the redirect out to PayPal/Stripe and back since
+// it's stored server-side in the session, not the URL.
+$_SESSION['last_order_id'] = $orderId;
+
 // Order + items are committed. Now kick off the payment gateway (or, for a
 // test order, the no-op TestGateway that never calls out to anywhere).
 $order = fetchOrderByNumber($orderNumber);
@@ -241,8 +249,28 @@ function fetchOrderItems(int $orderId): array
     return $stmt->fetchAll();
 }
 
+/**
+ * True if $amount (from the gateway's own response) matches this order's
+ * total closely enough to allow for currency rounding - never trust a
+ * capture/session status alone without checking the actual amount moved
+ * matches what's owed (see docs/SECURITY_AUDIT.md finding #2).
+ */
+function paymentAmountMatches(mixed $amount, float $orderTotal): bool
+{
+    return is_numeric($amount) && abs((float)$amount - $orderTotal) < 0.01;
+}
+
 function markOrderPaid(array $order, ?string $transactionId, string $gatewayResponse): void
 {
+    // Idempotency guard: a gateway return URL can legitimately be hit more
+    // than once (browser back/forward, a retried request, the customer
+    // reloading it) - without this, every extra hit would insert another
+    // "sale" row into the transactions ledger for the same payment, double-
+    // counting revenue (see docs/SECURITY_AUDIT.md finding #3).
+    if (($order['payment_status'] ?? null) === 'paid') {
+        return;
+    }
+
     $pdo = db();
     $pdo->prepare('UPDATE orders SET status = "processing", payment_status = "paid" WHERE id = ?')->execute([$order['id']]);
     $pdo->prepare(
@@ -262,21 +290,39 @@ function handleCapture(string $gateway, string $orderNumber, ?string $sessionId)
     $order = fetchOrderByNumber($orderNumber);
 
     if ($gateway === 'paypal') {
-        $paypalOrderId = $_GET['token'] ?? null; // PayPal appends its own order id as ?token=
+        // The PayPal order id this *specific* order's payment was created
+        // for - the only value ever used to actually call PayPal. A
+        // $_GET['token'] that doesn't match it is ignored rather than
+        // substituted in: trusting the query string here would let anyone
+        // pay for a *different*, real order of their own and then replay
+        // that real token against this order's number, marking it paid for
+        // free (see docs/SECURITY_AUDIT.md finding #2).
         $stmt = db()->prepare('SELECT transaction_id FROM payments WHERE order_id = ?');
         $stmt->execute([$order['id']]);
-        $txId = $paypalOrderId ?: ($stmt->fetchColumn() ?: null);
+        $txId = $stmt->fetchColumn() ?: null;
+        $submittedToken = $_GET['token'] ?? null;
 
-        if ($txId) {
+        if ($txId && $submittedToken === $txId) {
             $captureResponse = capturePayPalOrder($txId);
-            if (($captureResponse['status'] ?? '') === 'COMPLETED') {
+            $capturedAmount = $captureResponse['purchase_units'][0]['payments']['captures'][0]['amount']['value'] ?? null;
+            if (($captureResponse['status'] ?? '') === 'COMPLETED' && paymentAmountMatches($capturedAmount, (float)$order['total'])) {
                 markOrderPaid($order, $txId, json_encode($captureResponse));
             }
         }
     } elseif ($gateway === 'credit_card' && $sessionId) {
-        $sessionData = fetchStripeSession($sessionId);
-        if (($sessionData['payment_status'] ?? '') === 'paid') {
-            markOrderPaid($order, $sessionId, json_encode($sessionData));
+        // Same binding requirement as PayPal above: only ever capture using
+        // the Stripe Checkout Session id this order's payment record was
+        // created with, never whatever $sessionId happens to be in the URL.
+        $stmt = db()->prepare('SELECT transaction_id FROM payments WHERE order_id = ?');
+        $stmt->execute([$order['id']]);
+        $storedSessionId = $stmt->fetchColumn() ?: null;
+
+        if ($storedSessionId && $sessionId === $storedSessionId) {
+            $sessionData = fetchStripeSession($sessionId);
+            $paidAmount = isset($sessionData['amount_total']) ? $sessionData['amount_total'] / 100 : null;
+            if (($sessionData['payment_status'] ?? '') === 'paid' && paymentAmountMatches($paidAmount, (float)$order['total'])) {
+                markOrderPaid($order, $sessionId, json_encode($sessionData));
+            }
         }
     }
 

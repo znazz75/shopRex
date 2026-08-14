@@ -241,6 +241,20 @@ CREATE TABLE admin_users (
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------
+-- Brute-force throttle for login.php / admin/login.php / forgot_password.php.
+-- One row per failed attempt; see isRateLimited()/recordFailedLoginAttempt()/
+-- clearLoginAttempts() in includes/functions.php. Rows aren't pruned
+-- automatically - they age out of every check's time window on their own,
+-- but an admin can safely TRUNCATE this table at any time.
+-- ------------------------------------------------------------
+CREATE TABLE login_attempts (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    identifier VARCHAR(191) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_login_attempts_identifier_created (identifier, created_at)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
 -- Cart (persisted so a session survives across visits/devices)
 -- ------------------------------------------------------------
 CREATE TABLE carts (

@@ -11,18 +11,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf();
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
+    $rateLimitId = loginAttemptIdentifier($email);
 
-    $stmt = db()->prepare("SELECT * FROM customers WHERE email = ? AND status = 'active'");
-    $stmt->execute([$email]);
-    $customer = $stmt->fetch();
+    if (isRateLimited($rateLimitId)) {
+        $error = __('auth.too_many_attempts');
+    } else {
+        $stmt = db()->prepare("SELECT * FROM customers WHERE email = ? AND status = 'active'");
+        $stmt->execute([$email]);
+        $customer = $stmt->fetch();
 
-    if ($customer && password_verify($password, $customer['password_hash'])) {
-        regenerateSession();
-        $_SESSION['customer_id'] = (int)$customer['id'];
-        db()->prepare('UPDATE customers SET last_login_at = NOW(), deletion_warning_sent_at = NULL WHERE id = ?')->execute([$customer['id']]);
-        redirect(rtrim(SITE_URL, '/') . '/account.php');
+        if ($customer && password_verify($password, $customer['password_hash'])) {
+            clearLoginAttempts($rateLimitId);
+            regenerateSession();
+            $_SESSION['customer_id'] = (int)$customer['id'];
+            db()->prepare('UPDATE customers SET last_login_at = NOW(), deletion_warning_sent_at = NULL WHERE id = ?')->execute([$customer['id']]);
+            redirect(rtrim(SITE_URL, '/') . '/account.php');
+        }
+        recordFailedLoginAttempt($rateLimitId);
+        $error = __('auth.invalid_credentials');
     }
-    $error = __('auth.invalid_credentials');
 }
 
 $pageTitle = __('auth.sign_in');

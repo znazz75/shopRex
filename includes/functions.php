@@ -774,3 +774,36 @@ function requireCustomerLogin(): void
         redirect(rtrim(SITE_URL, '/') . '/login.php');
     }
 }
+
+// ---------------------------------------------------------------
+// Brute-force throttle (login.php, admin/login.php, forgot_password.php).
+// Backed by the login_attempts table (sql/schema.sql) rather than the
+// session, since a session resets the moment an attacker starts a fresh
+// one - the whole point is to survive that. $identifier is normally
+// "ip|lowercased-username-or-email" so a limit on one account/IP pair
+// doesn't lock out every other visitor sharing the same IP (e.g. behind
+// NAT/a corporate proxy) from *other* accounts.
+// ---------------------------------------------------------------
+function loginAttemptIdentifier(string $account): string
+{
+    return ($_SERVER['REMOTE_ADDR'] ?? 'unknown') . '|' . strtolower(trim($account));
+}
+
+function isRateLimited(string $identifier, int $maxAttempts = 5, int $windowMinutes = 15): bool
+{
+    $stmt = db()->prepare(
+        'SELECT COUNT(*) FROM login_attempts WHERE identifier = ? AND created_at > DATE_SUB(NOW(), INTERVAL ? MINUTE)'
+    );
+    $stmt->execute([$identifier, $windowMinutes]);
+    return (int)$stmt->fetchColumn() >= $maxAttempts;
+}
+
+function recordFailedLoginAttempt(string $identifier): void
+{
+    db()->prepare('INSERT INTO login_attempts (identifier) VALUES (?)')->execute([$identifier]);
+}
+
+function clearLoginAttempts(string $identifier): void
+{
+    db()->prepare('DELETE FROM login_attempts WHERE identifier = ?')->execute([$identifier]);
+}

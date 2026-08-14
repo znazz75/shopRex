@@ -123,6 +123,11 @@ if ($step === 'database' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($host === '' || $name === '' || $user === '') {
         $errors[] = 'Host, database name, and database user are required.';
     }
+    // Identifiers (a database name here) can't be bound as PDO parameters,
+    // so $name is interpolated directly into raw SQL below - this whitelist
+    // is the only thing standing between it and SQL injection. If you ever
+    // touch this validation, keep it at least this strict (see
+    // docs/SECURITY_AUDIT.md finding #9).
     if (!preg_match('/^[A-Za-z0-9_]+$/', $name)) {
         $errors[] = 'Database name may only contain letters, numbers, and underscores.';
     }

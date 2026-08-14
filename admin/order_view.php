@@ -16,10 +16,16 @@ if (!$order) {
     redirect(rtrim(SITE_URL, '/') . '/admin/orders.php');
 }
 
+$statuses = ['pending', 'processing', 'paid', 'shipped', 'completed', 'cancelled', 'refunded'];
+$paymentStatuses = ['pending', 'paid', 'failed', 'refunded'];
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf();
-    $newStatus = $_POST['status'] ?? $order['status'];
-    $newPaymentStatus = $_POST['payment_status'] ?? $order['payment_status'];
+    // Whitelisted server-side, not just constrained by the <select> in the
+    // form below - a POST is just text, and status/payment_status feed
+    // straight into the transaction-ledger logic just below.
+    $newStatus = in_array($_POST['status'] ?? '', $statuses, true) ? $_POST['status'] : $order['status'];
+    $newPaymentStatus = in_array($_POST['payment_status'] ?? '', $paymentStatuses, true) ? $_POST['payment_status'] : $order['payment_status'];
     $adminNotes = trim($_POST['admin_notes'] ?? '');
 
     $stmt = db()->prepare('UPDATE orders SET status = ?, payment_status = ?, admin_notes = ? WHERE id = ?');
@@ -58,9 +64,6 @@ $items = $itemStmt->fetchAll();
 $paymentStmt = db()->prepare('SELECT * FROM payments WHERE order_id = ?');
 $paymentStmt->execute([$id]);
 $payments = $paymentStmt->fetchAll();
-
-$statuses = ['pending', 'processing', 'paid', 'shipped', 'completed', 'cancelled', 'refunded'];
-$paymentStatuses = ['pending', 'paid', 'failed', 'refunded'];
 
 $invStmt = db()->prepare('SELECT * FROM invoices WHERE order_id = ? LIMIT 1');
 $invStmt->execute([$id]);

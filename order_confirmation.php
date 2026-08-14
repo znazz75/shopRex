@@ -19,6 +19,35 @@ if (!$order) {
     exit;
 }
 
+// Access control: the order's own customer, an admin, or the session that
+// just placed this exact order (covers guest checkout - see
+// checkout_process.php, which sets last_order_id right after the order is
+// created). Order numbers alone are not a secret worth trusting here - only
+// ~24 bits of randomness with a predictable date prefix - so without this
+// check anyone who guesses/brute-forces one could read another customer's
+// name, address, email, and order contents (see docs/SECURITY_AUDIT.md
+// finding #4).
+$customer = currentCustomer();
+$isOwner = $customer && $order['customer_id'] !== null && (int)$order['customer_id'] === (int)$customer['id'];
+
+$isAdmin = false;
+if (!empty($_SESSION['admin_id'])) {
+    $adminStmt = db()->prepare("SELECT id FROM admin_users WHERE id = ? AND status = 'active'");
+    $adminStmt->execute([$_SESSION['admin_id']]);
+    $isAdmin = (bool)$adminStmt->fetch();
+}
+
+$isJustPlaced = !empty($_SESSION['last_order_id']) && (int)$_SESSION['last_order_id'] === (int)$order['id'];
+
+if (!$isOwner && !$isAdmin && !$isJustPlaced) {
+    http_response_code(403);
+    $pageTitle = __('order.not_found_title');
+    require themeTemplatePath('header.php');
+    echo '<p>' . e(__('order.not_found_text')) . '</p>';
+    require themeTemplatePath('footer.php');
+    exit;
+}
+
 $itemStmt = db()->prepare('SELECT * FROM order_items WHERE order_id = ?');
 $itemStmt->execute([$order['id']]);
 $items = $itemStmt->fetchAll();

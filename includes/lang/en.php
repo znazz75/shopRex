@@ -156,6 +156,7 @@ return [
     'auth.forgot_password'               => 'Forgot your password?',
     'auth.reset_password'                  => 'Reset Password',
     'auth.invalid_credentials'               => 'Invalid email or password.',
+    'auth.too_many_attempts'                 => 'Too many attempts. Please wait a few minutes and try again.',
     'account.title'          => 'My Account',
     'account.signed_in_as'     => 'Signed in as {name} ({email})',
     'account.order_history'      => 'Order History',

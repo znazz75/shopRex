@@ -14,14 +14,30 @@ switch ($action) {
         $quantity = max(1, (int)($_POST['quantity'] ?? 1));
         $optionValueIds = [];
 
-        // Every option group (e.g. Size, Color) must have a value chosen.
+        // Every option group (e.g. Size, Color) must have a value chosen, and
+        // every chosen value must actually belong to one of *this* product's
+        // own option groups - otherwise a crafted option_value_id borrowed
+        // from a different product could later be used to apply its
+        // price_modifier/stock_quantity to this one (see Cart::getItems(),
+        // and docs/SECURITY_AUDIT.md finding #1).
         if (!empty($_POST['options']) && is_array($_POST['options'])) {
             foreach ($_POST['options'] as $optId => $valId) {
-                if ((int)$valId <= 0) {
+                $valId = (int)$valId;
+                if ($valId <= 0) {
                     setFlash('error', __('cart.select_all_options'));
                     redirect($_SERVER['HTTP_REFERER'] ?? (rtrim(SITE_URL, '/') . '/index.php'));
                 }
-                $optionValueIds[] = (int)$valId;
+                $ownStmt = db()->prepare(
+                    'SELECT 1 FROM product_option_values ov
+                     JOIN product_options po ON po.id = ov.product_option_id
+                     WHERE ov.id = ? AND po.product_id = ?'
+                );
+                $ownStmt->execute([$valId, $productId]);
+                if (!$ownStmt->fetchColumn()) {
+                    setFlash('error', __('cart.select_all_options'));
+                    redirect($_SERVER['HTTP_REFERER'] ?? (rtrim(SITE_URL, '/') . '/index.php'));
+                }
+                $optionValueIds[] = $valId;
             }
         }
 

@@ -29,6 +29,19 @@
     Header always set X-Content-Type-Options "nosniff"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
     Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+
+    # Defense-in-depth against the app's two intentionally-trusted-HTML
+    # surfaces (CMS page content in page.php, and admin-edited email
+    # templates - see README.md's "Notes / known simplifications"): doesn't
+    # change that trust model, but limits what injected markup could do if
+    # a Manager/Super Admin account is ever compromised. 'unsafe-inline' is
+    # required for script-src/style-src because the storefront and admin
+    # both use inline <script>/style blocks throughout rather than a build
+    # step - this still blocks arbitrary third-party script/style/frame/
+    # object sources, which is the more likely exfiltration path. Update
+    # the two CDN hosts below if you self-host the External libraries
+    # listed in README.md instead.
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://code.jquery.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' data: https://cdn.jsdelivr.net; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 </IfModule>
 
 # ---------------------------------------------------------------

@@ -172,13 +172,18 @@ class Cart
                 }
 
                 foreach ($optionValueIds as $optionValueId) {
+                    // Scoped to this product's own option groups (po.product_id) -
+                    // without this, an option value id borrowed from a *different*
+                    // product's option group would still be accepted, letting its
+                    // price_modifier/stock_quantity be applied to this product
+                    // (see docs/SECURITY_AUDIT.md, finding #1).
                     $optStmt = db()->prepare(
                         'SELECT ov.value, ov.price_modifier, ov.stock_quantity, po.name AS option_name
                          FROM product_option_values ov
                          JOIN product_options po ON po.id = ov.product_option_id
-                         WHERE ov.id = ?'
+                         WHERE ov.id = ? AND po.product_id = ?'
                     );
-                    $optStmt->execute([$optionValueId]);
+                    $optStmt->execute([$optionValueId, $product['id']]);
                     $option = $optStmt->fetch();
                     if ($option) {
                         $unitPrice += (float)$option['price_modifier'];
@@ -196,6 +201,10 @@ class Cart
                 }
             }
 
+            // Never let a (mis-scoped or otherwise unexpected) negative option
+            // modifier push a line into negative territory - a unit price is
+            // never less than free.
+            $unitPrice = max(0.0, $unitPrice);
             $lineTotal = round($unitPrice * $entry['quantity'], 2);
             $lineTax = round($lineTotal * $taxRate / 100, 2);
             $subtotal += $lineTotal;

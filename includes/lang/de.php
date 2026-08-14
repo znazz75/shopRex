@@ -157,6 +157,7 @@ return [
     'auth.forgot_password'               => 'Passwort vergessen?',
     'auth.reset_password'                  => 'Passwort zurücksetzen',
     'auth.invalid_credentials'               => 'Ungültige E-Mail-Adresse oder Passwort.',
+    'auth.too_many_attempts'                 => 'Zu viele Versuche. Bitte warten Sie einige Minuten und versuchen Sie es erneut.',
     'account.title'          => 'Mein Konto',
     'account.signed_in_as'     => 'Angemeldet als {name} ({email})',
     'account.order_history'      => 'Bestellverlauf',

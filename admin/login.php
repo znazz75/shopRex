@@ -11,18 +11,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf();
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
+    $rateLimitId = loginAttemptIdentifier($username);
 
-    $stmt = db()->prepare("SELECT * FROM admin_users WHERE username = ? AND status = 'active'");
-    $stmt->execute([$username]);
-    $admin = $stmt->fetch();
+    if (isRateLimited($rateLimitId)) {
+        $error = __('auth.too_many_attempts');
+    } else {
+        $stmt = db()->prepare("SELECT * FROM admin_users WHERE username = ? AND status = 'active'");
+        $stmt->execute([$username]);
+        $admin = $stmt->fetch();
 
-    if ($admin && password_verify($password, $admin['password_hash'])) {
-        regenerateSession();
-        $_SESSION['admin_id'] = (int)$admin['id'];
-        db()->prepare('UPDATE admin_users SET last_login = NOW() WHERE id = ?')->execute([$admin['id']]);
-        redirect(rtrim(SITE_URL, '/') . '/admin/index.php');
+        if ($admin && password_verify($password, $admin['password_hash'])) {
+            clearLoginAttempts($rateLimitId);
+            regenerateSession();
+            $_SESSION['admin_id'] = (int)$admin['id'];
+            db()->prepare('UPDATE admin_users SET last_login = NOW() WHERE id = ?')->execute([$admin['id']]);
+            redirect(rtrim(SITE_URL, '/') . '/admin/index.php');
+        }
+        recordFailedLoginAttempt($rateLimitId);
+        $error = __('auth.invalid_credentials');
     }
-    $error = __('auth.invalid_credentials');
 }
 $availableLangs = getAvailableLanguages();
 ?>

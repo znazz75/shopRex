@@ -29,8 +29,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = __('admin.product_images.choose_file');
         } else {
             $allowed = ['jpg' => true, 'jpeg' => true, 'png' => true, 'webp' => true, 'gif' => true];
+            $allowedMimes = ['image/jpeg' => true, 'image/png' => true, 'image/webp' => true, 'image/gif' => true];
             $ext = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
-            if (!isset($allowed[$ext]) || $_FILES['image']['size'] > 8 * 1024 * 1024) {
+            // The extension whitelist alone only constrains the filename - it
+            // says nothing about what's actually inside the uploaded bytes.
+            // getimagesize() decodes just enough of the file to report real
+            // image dimensions/mime, so a non-image file renamed to end in
+            // .jpg (e.g. a PHP payload, relying solely on uploads/.htaccess
+            // blocking execution) is rejected here too, before it ever
+            // touches disk - see docs/SECURITY_AUDIT.md finding #6.
+            $imageInfo = @getimagesize($_FILES['image']['tmp_name']);
+            if (!isset($allowed[$ext]) || !$imageInfo || !isset($allowedMimes[$imageInfo['mime']]) || $_FILES['image']['size'] > 8 * 1024 * 1024) {
                 $errors[] = __('admin.product_images.file_requirements');
             } else {
                 if (!is_dir(UPLOAD_DIR)) {
