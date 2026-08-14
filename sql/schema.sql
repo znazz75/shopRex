@@ -647,7 +647,27 @@ INSERT INTO pages (slug, language, title, content, is_system) VALUES
      '<p>Alle Inhalte dieser Website - einschließlich Text, Bilder, Logos und Produktfotografie -
       sind Eigentum dieses Shops oder seiner Lizenzgeber und dürfen ohne vorherige schriftliche
       Genehmigung weder vervielfältigt noch verbreitet oder verwendet werden. Ersetzen Sie diesen
-      Platzhalter durch Ihre eigene Urheberrechtserklärung.</p>', 1);
+      Platzhalter durch Ihre eigene Urheberrechtserklärung.</p>', 1),
+    ('legal-notice', 'fr', 'Mentions légales',
+     '<p><strong>Contenu provisoire - à remplacer par vos véritables mentions légales avant la mise en ligne.</strong></p>
+      <p>Raison sociale<br>Adresse<br>Code postal, Ville<br>Pays</p>
+      <p>Représenté par : ...<br>Contact : shop@example.com</p>
+      <p>RCS : ...<br>N° TVA intracommunautaire : ...</p>', 1),
+    ('privacy-policy', 'fr', 'Politique de confidentialité',
+     '<p><strong>Contenu provisoire - à remplacer par votre véritable politique de confidentialité avant la mise en ligne.</strong></p>
+      <p>Décrivez quelles données personnelles vous collectez (par ex. nom, adresse, e-mail, historique
+      des commandes, coordonnées de paiement), pourquoi vous les collectez, pendant combien de temps
+      vous les conservez, quels tiers (prestataires de paiement, transporteurs, service d''e-mail) les
+      reçoivent, et comment les clients peuvent exercer leurs droits (accès, rectification,
+      suppression).</p>', 1),
+    ('about-us', 'fr', 'À propos de nous',
+     '<p>Dites à vos clients qui vous êtes, ce que vous vendez et pourquoi ils devraient vous faire
+      confiance. Remplacez ce contenu provisoire par votre propre histoire.</p>', 1),
+    ('copyright', 'fr', 'Droits d''auteur',
+     '<p>Tout le contenu de ce site - textes, images, logos et photographies de produits compris -
+      est la propriété de cette boutique ou de ses concédants et ne peut être reproduit, distribué
+      ou utilisé sans autorisation écrite préalable. Remplacez ce contenu provisoire par votre
+      propre mention de droits d''auteur.</p>', 1);
 
 -- ------------------------------------------------------------
 -- Default email templates (Admin -> Email Templates). '_header'/'_footer'
