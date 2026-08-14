@@ -30,7 +30,15 @@ function installationIsComplete(): bool
 }
 
 $locked = installationIsComplete();
-$step = $locked ? 'locked' : ($_GET['step'] ?? 'welcome');
+$requestedStep = $_GET['step'] ?? 'welcome';
+// 'done' stays reachable even once $locked is true - otherwise the
+// redirect from the admin-creation step (to install.php?step=done) landed
+// on this same request with installation now complete, so the ternary
+// below would immediately override it back to 'locked' and the one-time
+// "Setup complete!" confirmation was never actually seen. 'done' has no
+// POST handler and reveals nothing sensitive, so it's fine to stay
+// reachable indefinitely - equivalent to the 'locked' view either way.
+$step = ($locked && $requestedStep !== 'done') ? 'locked' : $requestedStep;
 $errors = [];
 $old = [];
 
