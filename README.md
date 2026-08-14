@@ -11,15 +11,17 @@ point you extend rather than a finished product. The storefront runs on
 Bootstrap 5 (+ jQuery/jQuery UI for a couple of interactive admin tools,
 Quill.js for rich text, Cropper.js for image cropping — all loaded from
 public CDNs, see [External libraries](#external-libraries)). The whole
-site (storefront and back office) is bilingual out of the box (English/
-German) and built to take more languages, VAT is fully configurable, and
-checkout generates a real PDF invoice — see the feature list below.
+site (storefront and back office) ships trilingual out of the box (English/
+German/French), lets you enable/disable individual languages (down to just
+one, which removes language-switching UI entirely) or add more, VAT is
+fully configurable, and checkout generates a real PDF invoice — see the
+feature list below.
 
 ## Features
 
 **Storefront**
 - Modern **Bootstrap 5** layout, **switchable from the back office** (Admin → Settings → 3 built-in themes: Default, Midnight/Dark, Ocean) — see [Frontend theme](#frontend-theme)
-- **Bilingual (English/German), extensible to any language** — a language switcher is always available in the header; see [Languages](#languages)
+- **Trilingual (English/German/French) out of the box, extensible to any language, and toggleable per-language from the back office** — a language switcher is available in the header whenever more than one language is enabled; see [Languages](#languages)
 - Product listing with sorting (newest, price, name), search, and **configurable pagination** (20/50/200/all, persisted per visitor) — see [Pagination](#pagination)
 - Categories with **unlimited nesting** (category > subcategory > subcategory > ...), with breadcrumbs and a hover-dropdown nav
 - **Site search** across both products and categories ([search.php](search.php))
@@ -214,16 +216,17 @@ unless you want to recolor something beyond what's already listed in
 
 ## Languages
 
-Ships bilingual (English + German) across **both** the storefront and the
-back office, and is built to take more languages without code changes to
-every page:
+Ships trilingual (English + German + French) across **both** the storefront
+and the back office, and is built to take more languages without code
+changes to every page:
 
-- `includes/lang/en.php` and `includes/lang/de.php` each return a flat
-  `'namespace.key' => 'string'` array; `__('key', ['token' => $value])`
-  (`includes/i18n.php`) looks up the current language, falls back to
-  English for anything missing, and does `{token}` substitution.
+- `includes/lang/en.php`, `de.php`, and `fr.php` each return a flat
+  `'namespace.key' => 'string'` array (640 keys, kept in lockstep across all
+  three); `__('key', ['token' => $value])` (`includes/i18n.php`) looks up
+  the current language, falls back to English for anything missing, and
+  does `{token}` substitution.
 - **Add a language** by dropping a new `includes/lang/xx.php` file with the
-  same keys (a `_meta_name` entry sets its display name, e.g. `'Français'`)
+  same keys (a `_meta_name` entry sets its display name, e.g. `'Español'`)
   - it's auto-detected everywhere a language picker appears, no other
     changes needed. **Admin → Settings → Languages** shows this same
     how-to directly in the back office too.
@@ -245,10 +248,14 @@ every page:
   `languageSwitchUrl()`). Until they pick one, **Admin → Settings → Language**
   sets the default (`default_language`), which must itself be an enabled
   language.
-- Dates are formatted per-language too (`formatLocalDate()`: `Aug 25, 2026`
-  vs. `25.08.2026`).
+- Dates are formatted per-language too (`formatLocalDate()`: `Aug 25, 2026` /
+  `25.08.2026` / `25 août 2026`) - PHP's `date()` isn't locale-aware, so a
+  language wanting spelled-out (non-English) month names needs its names
+  listed by hand there, same as French's; a numeric style like German's
+  needs no such list at all. Worth knowing if you add a language of your
+  own and its dates come out looking English.
 - **Scope note**: this covers the UI chrome (navigation, labels, buttons,
-  messages, emails, invoices) in both languages. **Product name, short
+  messages, emails, invoices) in all enabled languages. **Product name, short
   description, description, and option group/value labels** (e.g. "Size" /
   "S, M, L") are translatable too - **Admin → Products → edit** has a
   language tab per available language; a language left blank falls back to
@@ -560,7 +567,7 @@ admin/settings.php           Shop/payment/bank details, layout/theme/language/VA
   authoritative price used at add-to-cart/checkout time) - if you change
   the discount math, update both.
 - **Language coverage**: the storefront/admin UI chrome and all emails are
-  fully translated EN/DE, CMS pages support one row per language, and
+  fully translated EN/DE/FR, CMS pages support one row per language, and
   product name/short description/description/option labels are
   per-language too (Admin → Products → edit) - see [Languages](#languages).
   Category *names* remain single-language (only a category's `intro_text`

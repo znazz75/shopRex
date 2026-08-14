@@ -149,8 +149,26 @@ function formatLocalDate(string $datetime, bool $withTime = false, ?string $lang
         return $datetime;
     }
     $lang = $lang ?? getCurrentLanguage();
-    $format = $lang === 'de'
-        ? ($withTime ? 'd.m.Y H:i' : 'd.m.Y')
-        : ($withTime ? 'M j, Y H:i' : 'M j, Y');
-    return date($format, $ts);
+
+    if ($lang === 'de') {
+        return date($withTime ? 'd.m.Y H:i' : 'd.m.Y', $ts);
+    }
+
+    if ($lang === 'fr') {
+        // PHP's date() isn't locale-aware - there's no built-in way to get
+        // "14 août 2026" without the intl extension, which this project
+        // avoids requiring (see README's "zero required dependencies"
+        // philosophy) - so month names are spelled out by hand instead.
+        // Add a similar branch here for any other language that wants
+        // non-English month names; a numeric style like German's above
+        // needs no such branch at all.
+        static $frenchMonths = [
+            'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+            'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
+        ];
+        $datePart = (int)date('j', $ts) . ' ' . $frenchMonths[(int)date('n', $ts) - 1] . ' ' . date('Y', $ts);
+        return $withTime ? $datePart . ' ' . date('H:i', $ts) : $datePart;
+    }
+
+    return date($withTime ? 'M j, Y H:i' : 'M j, Y', $ts);
 }

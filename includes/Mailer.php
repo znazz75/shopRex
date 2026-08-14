@@ -1,6 +1,6 @@
 <?php
 /**
- * Mailer with editable, bilingual templates.
+ * Mailer with editable, multi-language templates.
  *
  * Every email is: {{_header}} + body_html (from email_templates, with
  * {{token}} substitution) + {{_footer}}. Header/footer and every
