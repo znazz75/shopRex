@@ -1,0 +1,20 @@
+# Uploaded product images are served directly (needed for <img> tags), but
+# nothing here should ever be allowed to execute as PHP - defense in depth
+# in case a malicious file ever slipped past the upload validation in
+# admin/product_images.php.
+<FilesMatch "\.(php|phtml|php\d|phar|pl|py|cgi|sh)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>

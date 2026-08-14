@@ -1,0 +1,9 @@
+# Invoice PDFs are never served directly - only through invoice_download.php,
+# which checks the requester owns the order or is an admin.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

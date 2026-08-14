@@ -1,0 +1,4 @@
+{
+  "name": "Default",
+  "description": "The standard shopRex layout - breadcrumb, filter/sort toolbar, and a responsive product grid. Provides no template overrides at all (falls back to includes/header.php, footer.php, home.php for everything) - proves the packaging mechanism is transparent, since picking it looks identical to not having a theme system at all."
+}

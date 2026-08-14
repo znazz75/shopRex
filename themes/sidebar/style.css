@@ -1,0 +1,51 @@
+/* "Sidebar Filters" theme package - layout-only additions on top of
+   assets/css/style.css (loaded first; this file can override anything in
+   it). Colors still come from the independent color-accent picker
+   (Admin -> Settings -> Layout), this file only shapes structure. */
+
+.sidebar-categories {
+  border-right: 1px solid var(--bs-border-color, #dee2e6);
+  padding-right: 1.5rem;
+}
+
+.sidebar-category-tree {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.sidebar-category-tree .sidebar-category-tree {
+  margin-left: 0.9rem;
+  margin-top: 0.25rem;
+  border-left: 2px solid var(--bs-border-color, #dee2e6);
+  padding-left: 0.75rem;
+}
+
+.sidebar-category-tree a {
+  display: block;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+
+.sidebar-category-tree a:hover {
+  background: var(--bs-tertiary-bg, rgba(0, 0, 0, 0.05));
+}
+
+.sidebar-category-tree a.active {
+  background: var(--shop-accent, #0d6efd);
+  color: #fff;
+  font-weight: 600;
+}
+
+@media (max-width: 767.98px) {
+  .sidebar-categories {
+    border-right: none;
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    padding-right: 0;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+  }
+}

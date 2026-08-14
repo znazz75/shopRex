@@ -1,0 +1,64 @@
+/**
+ * Slim custom layer on top of Bootstrap 5 (loaded from CDN in header.php).
+ * --shop-accent is set inline per-request from the active theme (see
+ * includes/functions.php getActiveTheme() / Admin -> Settings) - Bootstrap's
+ * compiled CSS bakes component colors into fixed values rather than exposing
+ * them as runtime variables, so the rules below explicitly recolor the
+ * handful of Bootstrap classes this project actually uses.
+ */
+
+:root {
+  --shop-accent: #0d6efd;
+}
+
+a {
+  color: var(--shop-accent);
+}
+
+.btn-primary {
+  background-color: var(--shop-accent) !important;
+  border-color: var(--shop-accent) !important;
+}
+
+.btn-outline-primary {
+  color: var(--shop-accent) !important;
+  border-color: var(--shop-accent) !important;
+}
+.btn-outline-primary:hover {
+  background-color: var(--shop-accent) !important;
+  color: #fff !important;
+}
+
+.text-primary { color: var(--shop-accent) !important; }
+.badge.bg-primary { background-color: var(--shop-accent) !important; }
+.page-link { color: var(--shop-accent); }
+.form-check-input:checked { background-color: var(--shop-accent); border-color: var(--shop-accent); }
+.nav-link.dropdown-toggle:hover, .navbar .nav-link:hover { opacity: .85; }
+.carousel-indicators [data-bs-target] { background-color: var(--shop-accent); }
+
+/* Product grid */
+.product-card { transition: box-shadow .15s ease, transform .15s ease; height: 100%; }
+.product-card:hover { box-shadow: 0 .5rem 1rem rgba(0,0,0,.1); transform: translateY(-2px); }
+.product-card .card-img-top { aspect-ratio: 1/1; object-fit: cover; background: #f0f0f0; }
+.price-current { font-weight: 700; font-size: 1.1rem; color: var(--shop-accent); }
+.price-old { color: var(--bs-secondary-color); text-decoration: line-through; font-weight: 400; margin-right: .35rem; font-size: .9rem; }
+
+/* Subcategory chips */
+.subcategory-chips .btn { border-radius: 999px; }
+
+/* Product gallery */
+.product-gallery .carousel-item img { width: 100%; aspect-ratio: 1/1; object-fit: contain; background: #f8f9fa; border-radius: .5rem; }
+.gallery-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: .35rem; cursor: pointer; border: 2px solid transparent; opacity: .75; }
+.gallery-thumb.active, .gallery-thumb:hover { border-color: var(--shop-accent); opacity: 1; }
+.carousel-caption-static { background: var(--bs-tertiary-bg); border-radius: .5rem; padding: .5rem 1rem; font-size: .9rem; margin-top: .5rem; }
+
+/* Cart / checkout */
+.cart-thumb { width: 60px; height: 60px; object-fit: cover; border-radius: .35rem; }
+.payment-option { cursor: pointer; }
+.payment-option .form-check-input { margin-top: .3rem; }
+
+/* CMS page content (rendered from admin/pages.php) */
+.cms-content img { max-width: 100%; height: auto; }
+.cms-content { line-height: 1.7; }
+
+footer a.link-light:hover { color: var(--shop-accent) !important; }

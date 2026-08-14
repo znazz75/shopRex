@@ -1,0 +1,4 @@
+{
+  "name": "Sidebar Filters",
+  "description": "A structurally different storefront layout: the full category tree lives in a persistent left sidebar instead of a top breadcrumb/chip row, with the product grid alongside it. Overrides only home.php (index.php's product-listing content) and adds its own style.css - header.php/footer.php fall back to the core includes/ versions unchanged, showing a theme package only needs to override what's actually different."
+}

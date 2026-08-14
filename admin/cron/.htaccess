@@ -1,0 +1,9 @@
+# Defense in depth: gdpr_cleanup.php already refuses to run outside the
+# CLI, but block web access to this folder entirely too.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

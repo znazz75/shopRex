@@ -1,0 +1,22 @@
+uploads/products/*
+!uploads/products/.gitkeep
+uploads/invoices/*
+!uploads/invoices/.gitkeep
+!uploads/invoices/.htaccess
+config/config.local.php
+config/installed.php
+*.log
+.DS_Store
+Thumbs.db
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+
+# Claude Code project settings (local-only permissions, not project config)
+.claude/settings.local.json
+
+# Composer (only if you opt into PHPMailer/dompdf/etc. per the README)
+vendor/
+composer.lock

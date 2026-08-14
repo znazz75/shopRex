@@ -1,0 +1,50 @@
+# shopRex - root security hardening.
+# Complements the csrf_token check in includes/functions.php (requireCsrf())
+# and the SameSite/HttpOnly session cookie set in config/config.php.
+
+# ---------------------------------------------------------------
+# Force HTTPS (optional, server-level)
+# config/config.php already redirects HTTP -> HTTPS in PHP whenever your
+# configured Site URL (Admin -> Settings) uses https:// - that's enough for
+# most setups and won't break a http://-only local/staging environment.
+# Uncomment below only if you want the same redirect done by Apache before
+# PHP even runs (e.g. for performance) - do NOT enable this on a site still
+# served over plain HTTP, or every request will redirect-loop.
+# ---------------------------------------------------------------
+# <IfModule mod_rewrite.c>
+#     RewriteEngine On
+#     RewriteCond %{HTTPS} off
+#     RewriteCond %{HTTP:X-Forwarded-Proto} !https
+#     RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+# </IfModule>
+
+# ---------------------------------------------------------------
+# Security headers
+# ---------------------------------------------------------------
+<IfModule mod_headers.c>
+    # Stops the site being framed by another origin - a common precursor to
+    # "clickjacking" CSRF-style attacks that trick a logged-in user into
+    # submitting a form they can't see.
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+</IfModule>
+
+# ---------------------------------------------------------------
+# Don't reveal directory contents anywhere in the project
+# ---------------------------------------------------------------
+Options -Indexes
+
+# ---------------------------------------------------------------
+# Block direct access to dotfiles (.env, .git, .htaccess itself, etc.)
+# ---------------------------------------------------------------
+<FilesMatch "^\.">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
