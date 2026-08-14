@@ -51,6 +51,7 @@ $availableLangs = getEnabledLanguages();
       <a href="<?= rtrim(SITE_URL, '/') ?>/admin/logout.php"><?= e(__('nav.logout')) ?></a>
       &middot; <a href="<?= rtrim(SITE_URL, '/') ?>/index.php" target="_blank"><?= e(__('admin.view_shop')) ?></a>
     </div>
+    <div class="admin-user" style="opacity:.5;font-size:11px;">shopRex v<?= e(SHOPREX_VERSION) ?></div>
   </aside>
   <main class="admin-main">
     <?php foreach (getFlashes() as $flash): ?>

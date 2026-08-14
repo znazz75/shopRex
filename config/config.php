@@ -64,6 +64,11 @@ if (!defined('DB_PASS')) define('DB_PASS', getenv('SHOPREX_DB_PASS') ?: '');
 // ---------------------------------------------------------------
 // Site
 // ---------------------------------------------------------------
+// Mirrors the VERSION file at the project root - see CONTRIBUTING.md's
+// "Versioning" section for the project's release/bump convention. Kept as
+// a literal string (not computed from the file) so it's available even in
+// contexts that would rather not touch the filesystem on every request.
+define('SHOPREX_VERSION', '1.00');
 define('SITE_NAME', 'shopRex');
 if (!defined('SITE_URL')) define('SITE_URL', getenv('SHOPREX_SITE_URL') ?: detectSiteUrl());
 if (!defined('ADMIN_EMAIL')) define('ADMIN_EMAIL', getenv('SHOPREX_ADMIN_EMAIL') ?: 'admin@example.com');

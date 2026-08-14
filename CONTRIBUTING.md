@@ -24,9 +24,9 @@ docs corrections, and translations don't need this step.
   fine as documented opt-ins, not defaults.
 - **Match the existing style**: procedural/light-OOP PHP, prepared
   statements for all queries, `__()` for any user-facing string (see
-  [Languages](README.md#languages) - both `en.php` and `de.php` need the new
-  keys), CSRF protection on every state-changing form (`csrfField()` /
-  `requireCsrf()`).
+  [Languages](README.md#languages) - `en.php`, `de.php`, and `fr.php` all
+  need the new keys), CSRF protection on every state-changing form
+  (`csrfField()` / `requireCsrf()`).
 - **Security-sensitive areas** - authentication, file uploads, payment
   handling, admin access control - get extra scrutiny; explain your
   reasoning in the PR description.
@@ -39,6 +39,23 @@ docs corrections, and translations don't need this step.
 
 See [Languages](README.md#languages) - drop `includes/lang/xx.php` with the
 same keys as `en.php`, no code changes required. These are always welcome.
+
+## Versioning
+
+shopRex uses a simple, non-semver decimal scheme rather than semantic
+versioning: **every release bumps the version by exactly `0.01`** (`1.00`
+→ `1.01` → `1.02` → … → `1.10` → `1.11` → …). The current version lives in
+[VERSION](VERSION) (a single plain-text line) and is mirrored in the
+`SHOPREX_VERSION` constant in `config/config.php` (shown in the admin
+sidebar footer). When a change lands on `main`:
+
+1. Bump [VERSION](VERSION) and `SHOPREX_VERSION` by `0.01`.
+2. Add an entry to [CHANGELOG.md](CHANGELOG.md) under a new heading for
+   that version, dated the day of the change.
+3. Tag the commit `vX.XX` (matching the new VERSION) and push the tag -
+   pushing a tag is what puts a downloadable source archive on the repo's
+   [Releases](../../releases) page; consider also filling in a GitHub
+   Release with notes for anything more than a trivial bump.
 
 ## Reporting security issues
 

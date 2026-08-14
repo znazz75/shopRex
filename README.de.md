@@ -2,6 +2,7 @@
 
 [English](README.md) | **Deutsch**
 
+[![Version](https://img.shields.io/badge/version-1.00-blue.svg)](https://github.com/znazz75/shopRex/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![PHP](https://img.shields.io/badge/PHP-8.0%2B-777bb4)
 ![MySQL](https://img.shields.io/badge/MySQL-5.7%2B%20%2F%20MariaDB%2010.3%2B-4479a1)
