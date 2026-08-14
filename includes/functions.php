@@ -1,6 +1,20 @@
 <?php
 /**
- * Shared helper functions used across the storefront and admin back office.
+ * Shared helper functions - v2.00 pruned. Every page-level/business-logic
+ * function that used to live here has been ported into the src/ OOP stack
+ * (see CLAUDE.md's architecture section); what remains below is exactly
+ * the subset still called by:
+ *   - install.php (the standalone first-run setup wizard, which
+ *     deliberately stays outside the src/ stack - it has to work before
+ *     config/installed.php, and therefore the DB the rest of the app
+ *     depends on, exists at all), and
+ *   - the handful of legacy classes src/container.php still loads as-is
+ *     (includes/Cart.php, Mailer.php, InvoiceGenerator.php, SimplePdf.php,
+ *     ImageProcessor.php, GdprTools.php, GdprCleanup.php,
+ *     PaymentGateway.php - see that file's docblock for why those specific
+ *     classes weren't ported).
+ * Nothing here is called from src/ itself - src/view-helpers.php's shims
+ * delegate to the new classes, not to this file.
  */
 
 function db(): PDO
@@ -20,10 +34,12 @@ function formatPrice(float $amount): string
 
 /**
  * (Re)writes config/installed.php - the DB credentials + Site URL that
- * make up an installed site. Used by install.php on first setup, and by
- * Admin -> Settings when an admin edits the Site URL later (e.g. after
- * moving the site to a different domain/subdirectory) without needing to
- * touch the database connection at all.
+ * make up an installed site. Used by install.php on first setup. (Admin ->
+ * Settings' equivalent is now Controllers\Admin\SettingsAdminController::
+ * writeInstalledConfigFile(), a byte-for-byte port of this same function -
+ * kept separate rather than shared, since install.php runs before the
+ * src/ autoloader's dependencies - config/database.php, a DB connection -
+ * are guaranteed to exist.)
  */
 function writeInstalledConfigFile(string $host, string $port, string $name, string $user, string $pass, string $siteUrl): bool
 {
@@ -39,27 +55,18 @@ function writeInstalledConfigFile(string $host, string $port, string $name, stri
     return file_put_contents(SHOPREX_INSTALLED_FILE, $content) !== false;
 }
 
+/** Used by install.php only - every other page redirects via Core\Response::redirect(). */
 function redirect(string $path): void
 {
     header('Location: ' . $path);
     exit;
 }
 
-function slugify(string $text): string
-{
-    $text = preg_replace('~[^\pL\d]+~u', '-', $text);
-    $text = trim(iconv('UTF-8', 'ASCII//TRANSLIT', $text) ?: $text, '-');
-    $text = strtolower(preg_replace('~[^-\w]+~', '', $text));
-    return $text !== '' ? $text : 'n-a';
-}
-
-function generateOrderNumber(): string
-{
-    return 'SR' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
-}
-
 // ---------------------------------------------------------------
-// CSRF protection
+// CSRF protection - install.php only (every other page's CSRF handling
+// goes through Core\Csrf, a separate, unrelated implementation bound to
+// the same $_SESSION['csrf_token'] key so a token from one still verifies
+// against the other during the brief window install.php can still run).
 // ---------------------------------------------------------------
 function csrfToken(): string
 {
@@ -92,37 +99,11 @@ function requireCsrf(): void
     }
 }
 
-/**
- * Call on every successful login/registration (customer or admin), before
- * setting the *_id session key. Issues a fresh session ID - defends against
- * session fixation (an attacker who planted a session ID on the victim
- * before login would otherwise keep working after login) and, since the
- * CSRF token lives in the session, stops a fixated attacker from having
- * pre-known its value too. Session data (cart, etc.) is preserved.
- */
-function regenerateSession(): void
-{
-    session_regenerate_id(true);
-    unset($_SESSION['csrf_token']); // force a fresh one on next csrfToken() call
-}
-
 // ---------------------------------------------------------------
-// Flash messages (one-time notices shown after a redirect)
-// ---------------------------------------------------------------
-function setFlash(string $type, string $message): void
-{
-    $_SESSION['flash'][] = ['type' => $type, 'message' => $message];
-}
-
-function getFlashes(): array
-{
-    $flashes = $_SESSION['flash'] ?? [];
-    unset($_SESSION['flash']);
-    return $flashes;
-}
-
-// ---------------------------------------------------------------
-// Settings (key/value store, cached per request)
+// Settings (key/value store, cached per request) - still the read path
+// for every kept legacy class (Mailer/InvoiceGenerator/PaymentGateway/
+// Cart all call this directly); Services\SettingsRepository is the src/
+// equivalent everything else uses.
 // ---------------------------------------------------------------
 function getSetting(string $key, ?string $default = null): ?string
 {
@@ -137,389 +118,19 @@ function getSetting(string $key, ?string $default = null): ?string
     return $cache[$key] ?? $default;
 }
 
-/**
- * Which payment methods checkout.php/checkout_process.php should offer -
- * paypal/credit_card/bank_transfer are gated by their Admin -> Settings ->
- * Payment Methods toggle; invoice is never globally enabled here, it's
- * strictly per-customer (see customerCanPayOnInvoice()) since it's a trust
- * decision about one customer, not a site-wide payment option.
- */
-function isPaymentMethodEnabled(string $method): bool
-{
-    return match ($method) {
-        'paypal'        => getSetting('payment_method_paypal_enabled', '1') === '1',
-        'credit_card'   => getSetting('payment_method_credit_card_enabled', '1') === '1',
-        'bank_transfer' => getSetting('payment_method_bank_transfer_enabled', '1') === '1',
-        default         => false,
-    };
-}
-
-/**
- * True if $customer (a currentCustomer()/customers-row array, or null for a
- * guest) is allowed to pay on invoice. Guests never qualify - invoice is an
- * account-level trust grant (Admin -> Customers -> [customer] -> Payment),
- * so it requires being logged in as that specific customer.
- */
-function customerCanPayOnInvoice(?array $customer): bool
-{
-    return $customer !== null && !empty($customer['can_pay_on_invoice']);
-}
-
 // ---------------------------------------------------------------
-// Frontend theme (switchable from Admin -> Settings)
-//
-// Bootstrap is loaded from the CDN, so component colors are compiled into
-// fixed values rather than exposed as runtime CSS variables. Rather than
-// requiring a Sass build step, each theme sets a --shop-accent custom
-// property (consumed by assets/css/style.css to recolor the specific
-// Bootstrap classes this project actually uses - buttons, links, badges,
-// form checks) plus Bootstrap's own native data-bs-theme light/dark switch.
-// ---------------------------------------------------------------
-const THEMES = [
-    'default' => ['label' => 'Default (Light)', 'bs_theme' => 'light', 'accent' => '#0d6efd', 'navbar_bg' => '#212529'],
-    'dark'    => ['label' => 'Midnight (Dark)', 'bs_theme' => 'dark', 'accent' => '#6ea8fe', 'navbar_bg' => '#000000'],
-    'ocean'   => ['label' => 'Ocean (Teal)', 'bs_theme' => 'light', 'accent' => '#0d9488', 'navbar_bg' => '#0f766e'],
-];
-
-function getActiveTheme(): array
-{
-    $key = getSetting('site_theme', 'default');
-    return THEMES[$key] ?? THEMES['default'];
-}
-
-// ---------------------------------------------------------------
-// Theme PACKAGES (Admin -> Settings -> Layout) - a whole alternate
-// storefront structure, independent of the color accent above. Auto-
-// discovered from the themes/ directory the exact same way
-// getAvailableLanguages() (includes/i18n.php) discovers includes/lang/*.php:
-// drop in a new themes/<key>/ folder with a theme.json and it's picked up,
-// no code changes needed. Each package can override any of header.php,
-// footer.php, home.php (see THEME_TEMPLATES below); anything it doesn't
-// provide falls back to the matching includes/*.php. See README.md's
-// "Frontend theme" section for the full package layout.
-// ---------------------------------------------------------------
-define('THEMES_DIR', __DIR__ . '/../themes/');
-
-/**
- * ['default' => ['name' => 'Default', 'description' => '...'], ...] - built
- * from whatever themes/<key>/theme.json files exist. Falls back to a
- * single-entry ['default' => ...] if the themes/ directory is empty/missing
- * so the site never has zero usable layouts.
- */
-function getAvailableThemePackages(): array
-{
-    static $packages = null;
-    if ($packages !== null) {
-        return $packages;
-    }
-    $packages = [];
-    foreach (glob(THEMES_DIR . '*/theme.json') ?: [] as $file) {
-        $key = basename(dirname($file));
-        $meta = json_decode((string)file_get_contents($file), true) ?: [];
-        $packages[$key] = [
-            'name'        => $meta['name'] ?? ucfirst($key),
-            'description' => $meta['description'] ?? '',
-        ];
-    }
-    if (!$packages) {
-        $packages['default'] = ['name' => 'Default', 'description' => ''];
-    }
-    ksort($packages);
-    return $packages;
-}
-
-function getActiveThemePackageKey(): string
-{
-    $key = getSetting('site_theme_package', 'default');
-    return array_key_exists($key, getAvailableThemePackages()) ? $key : 'default';
-}
-
-/**
- * Resolve one themeable template slot ('header.php', 'footer.php', or
- * 'home.php') to an actual file path: the active package's version if it
- * provides one, else the core includes/ default. This is the only thing a
- * package is required to NOT provide - a package with none of the three
- * behaves identically to 'default' (proves the packaging mechanism is
- * transparent, per README.md).
- */
-function themeTemplatePath(string $template): string
-{
-    $packagePath = THEMES_DIR . getActiveThemePackageKey() . '/' . $template;
-    if (is_file($packagePath)) {
-        return $packagePath;
-    }
-    return __DIR__ . '/' . $template;
-}
-
-/**
- * <link> tag for the active package's own stylesheet, if it has one -
- * loaded after assets/css/style.css so a package can override layout CSS
- * (or recolor further) without touching the core stylesheet. Echoed
- * directly from includes/header.php.
- */
-function themeStylesheetTag(): string
-{
-    $key = getActiveThemePackageKey();
-    if (!is_file(THEMES_DIR . $key . '/style.css')) {
-        return '';
-    }
-    return '<link rel="stylesheet" href="' . rtrim(SITE_URL, '/') . '/themes/' . e($key) . '/style.css">';
-}
-
-// ---------------------------------------------------------------
-// Menus (main nav + footer submenu, both editable in the back office)
-// ---------------------------------------------------------------
-
-function buildMenuTree(array $rows, ?int $parentId = null): array
-{
-    $branch = [];
-    foreach ($rows as $row) {
-        $rowParent = $row['parent_id'] !== null ? (int)$row['parent_id'] : null;
-        if ($rowParent === $parentId) {
-            $row['children'] = buildMenuTree($rows, (int)$row['id']);
-            $branch[] = $row;
-        }
-    }
-    return $branch;
-}
-
-/**
- * Nested menu tree for a location ('main' or 'footer'), active items only.
- */
-function getMenuTree(string $location): array
-{
-    static $cache = [];
-    if (!isset($cache[$location])) {
-        $stmt = db()->prepare('SELECT * FROM menu_items WHERE location = ? AND is_active = 1 ORDER BY sort_order, id');
-        $stmt->execute([$location]);
-        $cache[$location] = buildMenuTree($stmt->fetchAll());
-    }
-    return $cache[$location];
-}
-
-/**
- * A menu item id plus every id nested beneath it - use this to stop a menu
- * item from being re-parented under one of its own descendants.
- */
-function getMenuItemDescendantIds(int $itemId): array
-{
-    $rows = db()->query('SELECT id, parent_id FROM menu_items')->fetchAll();
-    $childrenOf = [];
-    foreach ($rows as $row) {
-        $parent = $row['parent_id'] !== null ? (int)$row['parent_id'] : 0;
-        $childrenOf[$parent][] = (int)$row['id'];
-    }
-    $ids = [$itemId];
-    $queue = [$itemId];
-    while ($queue) {
-        $current = array_pop($queue);
-        foreach ($childrenOf[$current] ?? [] as $childId) {
-            $ids[] = $childId;
-            $queue[] = $childId;
-        }
-    }
-    return $ids;
-}
-
-function isMenuItemOrDescendant(int $itemId, int $candidateParentId): bool
-{
-    return in_array($candidateParentId, getMenuItemDescendantIds($itemId), true);
-}
-
-/**
- * Turn a menu item's link_type/link_value into a real URL.
- */
-function resolveMenuUrl(array $item): string
-{
-    $base = rtrim(SITE_URL, '/');
-    switch ($item['link_type']) {
-        case 'category':
-            return $base . '/index.php?category=' . (int)$item['link_value'];
-        case 'page':
-            return $base . '/page.php?slug=' . urlencode($item['link_value']);
-        default: // custom
-            $val = $item['link_value'];
-            return preg_match('~^https?://~i', $val) ? $val : $base . '/' . ltrim($val, '/');
-    }
-}
-
-// ---------------------------------------------------------------
-// Categories (unlimited nesting via parent_id)
-// ---------------------------------------------------------------
-
-/**
- * Turn a flat list of category rows into a nested tree keyed by children[].
- */
-function buildCategoryTree(array $rows, ?int $parentId = null): array
-{
-    $branch = [];
-    foreach ($rows as $row) {
-        $rowParent = $row['parent_id'] !== null ? (int)$row['parent_id'] : null;
-        if ($rowParent === $parentId) {
-            $row['children'] = buildCategoryTree($rows, (int)$row['id']);
-            $branch[] = $row;
-        }
-    }
-    return $branch;
-}
-
-/**
- * Full category tree, cached per request.
- */
-function getCategoryTree(): array
-{
-    static $tree = null;
-    if ($tree === null) {
-        $rows = db()->query('SELECT * FROM categories ORDER BY name')->fetchAll();
-        $tree = buildCategoryTree($rows);
-    }
-    return $tree;
-}
-
-/**
- * Flatten a category tree back into a list, adding a "depth" field so
- * callers can indent (dropdowns, admin tree view, nested nav).
- */
-function flattenCategoryTree(array $tree, int $depth = 0): array
-{
-    $flat = [];
-    foreach ($tree as $node) {
-        $children = $node['children'] ?? [];
-        unset($node['children']);
-        $node['depth'] = $depth;
-        $flat[] = $node;
-        if ($children) {
-            $flat = array_merge($flat, flattenCategoryTree($children, $depth + 1));
-        }
-    }
-    return $flat;
-}
-
-/**
- * A category id plus every id nested beneath it (any depth) - use this to
- * make "show products in this category" also include its subcategories.
- */
-function getCategoryDescendantIds(int $categoryId): array
-{
-    $rows = db()->query('SELECT id, parent_id FROM categories')->fetchAll();
-    $childrenOf = [];
-    foreach ($rows as $row) {
-        $parent = $row['parent_id'] !== null ? (int)$row['parent_id'] : 0;
-        $childrenOf[$parent][] = (int)$row['id'];
-    }
-
-    $ids = [$categoryId];
-    $queue = [$categoryId];
-    while ($queue) {
-        $current = array_pop($queue);
-        foreach ($childrenOf[$current] ?? [] as $childId) {
-            $ids[] = $childId;
-            $queue[] = $childId;
-        }
-    }
-    return $ids;
-}
-
-/**
- * Ancestor chain from root down to (and including) $categoryId, for
- * breadcrumbs. Returns [] if $categoryId is null/not found.
- */
-function getCategoryPath(?int $categoryId): array
-{
-    if (!$categoryId) {
-        return [];
-    }
-    $rows = db()->query('SELECT id, parent_id, name, slug FROM categories')->fetchAll();
-    $byId = [];
-    foreach ($rows as $row) {
-        $byId[(int)$row['id']] = $row;
-    }
-
-    $path = [];
-    $current = $byId[$categoryId] ?? null;
-    while ($current) {
-        array_unshift($path, $current);
-        $parentId = $current['parent_id'] !== null ? (int)$current['parent_id'] : null;
-        $current = $parentId ? ($byId[$parentId] ?? null) : null;
-    }
-    return $path;
-}
-
-/**
- * Find and return the node for $categoryId (with its children[] intact)
- * inside a tree returned by getCategoryTree(), or null if not found.
- */
-function findCategoryNode(array $nodes, int $categoryId): ?array
-{
-    foreach ($nodes as $node) {
-        if ((int)$node['id'] === $categoryId) {
-            return $node;
-        }
-        if (!empty($node['children'])) {
-            $found = findCategoryNode($node['children'], $categoryId);
-            if ($found !== null) {
-                return $found;
-            }
-        }
-    }
-    return null;
-}
-
-/**
- * True if $candidateParentId is $categoryId itself or one of its
- * descendants - use this to block a category from becoming its own
- * ancestor when re-parenting in the admin UI.
- */
-function isCategoryOrDescendant(int $categoryId, int $candidateParentId): bool
-{
-    return in_array($candidateParentId, getCategoryDescendantIds($categoryId), true);
-}
-
-/**
- * Optional per-language "intro text" for a category (Admin -> Categories),
- * shown above the product grid on the storefront when that category is
- * browsed (index.php?category=). Falls back from $lang -> the site's
- * default language -> null, same fallback chain page.php uses for CMS
- * pages. Returns null (render nothing) if no row exists in either language,
- * or the row exists but is empty.
- */
-function getCategoryIntroText(int $categoryId, string $lang): ?string
-{
-    $stmt = db()->prepare('SELECT language, intro_text FROM category_translations WHERE category_id = ? AND language IN (?, ?)');
-    $defaultLang = getSetting('default_language', 'en');
-    $stmt->execute([$categoryId, $lang, $defaultLang]);
-    $rows = $stmt->fetchAll();
-
-    $byLang = [];
-    foreach ($rows as $row) {
-        $byLang[$row['language']] = $row['intro_text'];
-    }
-
-    $text = $byLang[$lang] ?? $byLang[$defaultLang] ?? null;
-    return ($text !== null && trim($text) !== '') ? $text : null;
-}
-
-// ---------------------------------------------------------------
-// Product/option translations (Admin -> Products -> edit). Unlike
-// category names (single-language, only intro_text is translatable) or
-// pages (one whole row per language), a product's own row keeps holding
-// the site's default-language content exactly as before - these tables
-// (product_translations / product_option_translations /
-// product_option_value_translations) only ever hold OTHER languages, one
-// row per (entity, language). See docs in sql/schema.sql for why.
+// Product/option translations (Admin -> Products -> edit). Cart.php calls
+// applyProductTranslation() to re-derive a translated name/description for
+// whatever's in $_SESSION['cart'] on every read - Services\TranslationOverlay
+// is the src/ equivalent for everything else.
 // ---------------------------------------------------------------
 
 /**
  * Overlays $lang's translation onto $product - per field (name/
  * short_description/description), falling back to $product's own
  * base-language value whenever that field has no translation or the
- * translation is blank, same fallback philosophy as __() and
- * getCategoryIntroText(). A no-op when $lang is the site's default
- * language, since the base columns already hold exactly that. Every
- * template already reads $product['name']/['short_description']/
- * ['description'], so calling this once right after a product SELECT is
- * the only change needed - templates don't know or care whether the
- * value came from `products` or a translation.
+ * translation is blank. A no-op when $lang is the site's default
+ * language, since the base columns already hold exactly that.
  */
 function applyProductTranslation(array $product, ?string $lang = null): array
 {
@@ -543,164 +154,14 @@ function applyProductTranslation(array $product, ?string $lang = null): array
     return $product;
 }
 
-/**
- * Same idea as applyProductTranslation() but for an option-group tree -
- * the shape product.php/admin/product_edit.php already build (`SELECT *
- * FROM product_options ...` with each row's `values[]` sub-array
- * attached). Overlays $lang's option-group name and each value's text,
- * per field, falling back to the base name/value.
- */
-function applyOptionTranslations(array $options, ?string $lang = null): array
-{
-    $lang = $lang ?? getCurrentLanguage();
-    if (!$options || $lang === getSetting('default_language', 'en')) {
-        return $options;
-    }
-
-    $optionIds = array_column($options, 'id');
-    $placeholders = implode(',', array_fill(0, count($optionIds), '?'));
-    $nameStmt = db()->prepare(
-        "SELECT product_option_id, name FROM product_option_translations WHERE language = ? AND product_option_id IN ($placeholders)"
-    );
-    $nameStmt->execute([$lang, ...$optionIds]);
-    $namesByOptionId = array_column($nameStmt->fetchAll(), 'name', 'product_option_id');
-
-    $valueIds = [];
-    foreach ($options as $opt) {
-        foreach ($opt['values'] as $val) {
-            $valueIds[] = $val['id'];
-        }
-    }
-    $valuesByValueId = [];
-    if ($valueIds) {
-        $vPlaceholders = implode(',', array_fill(0, count($valueIds), '?'));
-        $valStmt = db()->prepare(
-            "SELECT product_option_value_id, value FROM product_option_value_translations WHERE language = ? AND product_option_value_id IN ($vPlaceholders)"
-        );
-        $valStmt->execute([$lang, ...$valueIds]);
-        $valuesByValueId = array_column($valStmt->fetchAll(), 'value', 'product_option_value_id');
-    }
-
-    foreach ($options as &$opt) {
-        if (!empty($namesByOptionId[$opt['id']])) {
-            $opt['name'] = $namesByOptionId[$opt['id']];
-        }
-        foreach ($opt['values'] as &$val) {
-            if (!empty($valuesByValueId[$val['id']])) {
-                $val['value'] = $valuesByValueId[$val['id']];
-            }
-        }
-        unset($val);
-    }
-    unset($opt);
-
-    return $options;
-}
-
-/**
- * Every language's product_translations row for $productId, keyed by
- * language - used to prefill Admin -> Products -> edit's per-language
- * tabs. Unlike applyProductTranslation(), this isn't limited to one
- * language and doesn't fall back - it's for editing, not display.
- */
-function getProductTranslationsByLanguage(int $productId): array
-{
-    $stmt = db()->prepare(
-        'SELECT language, name, short_description, description FROM product_translations WHERE product_id = ?'
-    );
-    $stmt->execute([$productId]);
-    $byLang = [];
-    foreach ($stmt->fetchAll() as $row) {
-        $byLang[$row['language']] = $row;
-    }
-    return $byLang;
-}
-
-/**
- * Option-group-name and option-value translations for every group in
- * $options (same shape as applyOptionTranslations()), pre-joined into
- * ready-to-render form values and keyed by [$groupIndex][$language] -
- * matching the same sequential group/value ordering
- * admin/product_edit.php's save handler and its $options/$opt['values']
- * loops already use, so the edit form can prefill translation inputs
- * positionally the same way it already prefills variant stock
- * ($variantStockByCombo). A group's value string is always exactly as
- * many comma-separated segments as it has values - a value with no
- * translation yet becomes an empty segment rather than being omitted, so
- * position alignment survives even a partially-translated group.
- *
- * Returns ['names' => [$groupIndex => [$lang => $name]],
- *          'values' => [$groupIndex => [$lang => 'val1, val2, ...']]].
- */
-function getOptionTranslationsForForm(array $options): array
-{
-    $result = ['names' => [], 'values' => []];
-    if (!$options) {
-        return $result;
-    }
-
-    $optionIds = array_column($options, 'id');
-    $placeholders = implode(',', array_fill(0, count($optionIds), '?'));
-    $nameStmt = db()->prepare(
-        "SELECT product_option_id, language, name FROM product_option_translations WHERE product_option_id IN ($placeholders)"
-    );
-    $nameStmt->execute($optionIds);
-    $namesByOptionId = [];
-    foreach ($nameStmt->fetchAll() as $row) {
-        $namesByOptionId[$row['product_option_id']][$row['language']] = $row['name'];
-    }
-
-    $valueIds = [];
-    foreach ($options as $opt) {
-        foreach ($opt['values'] as $val) {
-            $valueIds[] = $val['id'];
-        }
-    }
-    $valuesByValueId = [];
-    if ($valueIds) {
-        $vPlaceholders = implode(',', array_fill(0, count($valueIds), '?'));
-        $valStmt = db()->prepare(
-            "SELECT product_option_value_id, language, value FROM product_option_value_translations WHERE product_option_value_id IN ($vPlaceholders)"
-        );
-        $valStmt->execute($valueIds);
-        foreach ($valStmt->fetchAll() as $row) {
-            $valuesByValueId[$row['product_option_value_id']][$row['language']] = $row['value'];
-        }
-    }
-
-    foreach (array_values($options) as $groupIndex => $opt) {
-        $result['names'][$groupIndex] = $namesByOptionId[$opt['id']] ?? [];
-
-        $valueCount = count($opt['values']);
-        $perLangPositional = [];
-        foreach (array_values($opt['values']) as $valueIndex => $val) {
-            foreach (($valuesByValueId[$val['id']] ?? []) as $lang => $text) {
-                $perLangPositional[$lang][$valueIndex] = $text;
-            }
-        }
-        foreach ($perLangPositional as $lang => $positional) {
-            $joined = [];
-            for ($k = 0; $k < $valueCount; $k++) {
-                $joined[] = $positional[$k] ?? '';
-            }
-            $result['values'][$groupIndex][$lang] = implode(', ', $joined);
-        }
-    }
-
-    return $result;
-}
-
 // ---------------------------------------------------------------
-// Product helpers: discounts (with optional date range) and the
-// available_from/available_until visibility window.
+// Discount / VAT / tax - Cart.php needs the net effective price and tax
+// rate for each line item; InvoiceGenerator needs the formatted tax
+// number for its PDF columns. Services\DiscountCalculator/TaxCalculator
+// are the src/ equivalents for everything else.
 // ---------------------------------------------------------------
 
-/**
- * If $product currently has an active discount (discount_type != 'none'
- * AND now is within discount_starts_at/discount_ends_at, when set), return
- * details for rendering it; otherwise null. Expects the discount_* columns
- * from the products table.
- */
+/** Active discount for $product right now, or null - internal to getEffectivePrice(). */
 function getActiveDiscount(array $product): ?array
 {
     $type = $product['discount_type'] ?? 'none';
@@ -734,52 +195,22 @@ function getActiveDiscount(array $product): ?array
     ];
 }
 
-/**
- * The price to actually charge right now - the active discount price if
- * any, otherwise the regular price. Always NET (before tax) - see
- * getGrossPrice() for the tax-included price shown on the storefront.
- */
+/** The price to actually charge right now - the active discount price if any, otherwise the regular price. Always NET (before tax). */
 function getEffectivePrice(array $product): float
 {
     $discount = getActiveDiscount($product);
     return $discount ? $discount['price'] : (float)$product['price'];
 }
 
-// ---------------------------------------------------------------
-// VAT / tax rates (Admin -> Settings -> "Enable VAT", Admin -> Tax Rates)
-// ---------------------------------------------------------------
-
 function vatIsEnabled(): bool
 {
     return getSetting('vat_enabled', '1') === '1';
 }
 
-/** All configured tax rates, highest first. */
-function getAllTaxRates(): array
-{
-    static $rates = null;
-    if ($rates === null) {
-        $rates = db()->query('SELECT * FROM tax_rates ORDER BY rate DESC')->fetchAll();
-    }
-    return $rates;
-}
-
-/** The rate marked as default (Admin -> Tax Rates), or a 0% stand-in if none exists. */
-function getDefaultTaxRate(): array
-{
-    foreach (getAllTaxRates() as $rate) {
-        if ($rate['is_default']) {
-            return $rate;
-        }
-    }
-    return ['id' => null, 'name' => 'None', 'rate' => 0.00];
-}
-
 /**
  * Percentage to apply for $product right now - 0 whenever VAT is disabled
  * system-wide. Expects a tax_rate_percent column on $product (join/subquery
- * against tax_rates by tax_rate_id - the same pattern used for
- * primary_image elsewhere in this codebase).
+ * against tax_rates by tax_rate_id).
  */
 function getTaxRatePercent(array $product): float
 {
@@ -789,76 +220,13 @@ function getTaxRatePercent(array $product): float
     return isset($product['tax_rate_percent']) ? (float)$product['tax_rate_percent'] : 0.0;
 }
 
-/**
- * Gross (tax-included) price - what the storefront always displays
- * (product listing, product page). The shopping cart is the one place
- * that instead shows the net price plus a separate tax line - see cart.php.
- */
-function getGrossPrice(array $product): float
-{
-    $net = getEffectivePrice($product);
-    $rate = getTaxRatePercent($product);
-    return $rate > 0 ? round($net * (1 + $rate / 100), 2) : $net;
-}
-
 /** "19" not "19.00" - trims trailing zeros for compact display like "19% off". */
 function formatTaxRateNumber(float $rate): string
 {
     return rtrim(rtrim(number_format($rate, 2), '0'), '.');
 }
 
-/**
- * A human-readable "Offer valid ..." line for an active discount that has
- * a start and/or end date, or null if the discount is undated/inactive.
- */
-function formatDiscountDateRange(array $discount): ?string
-{
-    $starts = $discount['starts_at'] ?? null;
-    $ends = $discount['ends_at'] ?? null;
-    if (!$starts && !$ends) {
-        return null;
-    }
-    if ($starts && $ends) {
-        return __('discount.valid_range', ['start' => formatLocalDate($starts), 'end' => formatLocalDate($ends)]);
-    }
-    if ($ends) {
-        return __('discount.ends', ['date' => formatLocalDate($ends)]);
-    }
-    return __('discount.starts', ['date' => formatLocalDate($starts)]);
-}
-
-/**
- * False if $product is outside its available_from/available_until window -
- * treat exactly like "doesn't exist" (404) on the frontend. NULL bounds are
- * unbounded in that direction.
- */
-function isProductCurrentlyAvailable(array $product): bool
-{
-    $now = new DateTimeImmutable();
-    if (!empty($product['available_from']) && $now < new DateTimeImmutable($product['available_from'])) {
-        return false;
-    }
-    if (!empty($product['available_until']) && $now > new DateTimeImmutable($product['available_until'])) {
-        return false;
-    }
-    return true;
-}
-
-/**
- * SQL fragment (no leading AND) restricting a `p`-aliased products query to
- * rows currently inside their availability window. Pair with p.status = 'active'.
- */
-function availabilityWindowSql(): string
-{
-    return "(p.available_from IS NULL OR p.available_from <= NOW()) AND (p.available_until IS NULL OR p.available_until >= NOW())";
-}
-
-/**
- * URL of a product's primary listing image. Prefers the cropped derivative
- * (set via Admin -> Products -> Manage Images) over the original upload.
- * Expects $product to include primary_image / primary_cropped_image keys
- * (see the primary_image subquery pattern used in index.php etc.).
- */
+/** Display URL for a product's primary image - Cart.php's cart-line thumbnail. */
 function getPrimaryImage(array $product): string
 {
     if (!empty($product['primary_cropped_image'])) {
@@ -868,133 +236,4 @@ function getPrimaryImage(array $product): string
         return UPLOAD_URL . $product['primary_image'];
     }
     return rtrim(SITE_URL, '/') . '/assets/img/placeholder.svg';
-}
-
-/**
- * Display URL for a single product_images row - cropped derivative if one
- * has been generated, otherwise the original upload.
- */
-function getImageUrl(array $image): string
-{
-    return UPLOAD_URL . ($image['cropped_path'] ?: $image['image_path']);
-}
-
-// ---------------------------------------------------------------
-// Items-per-page (frontend selector persisted for the session; falls back
-// to the admin-configured default from Admin -> Settings)
-// ---------------------------------------------------------------
-const PER_PAGE_OPTIONS = ['20', '50', '200', 'all'];
-
-/**
- * Current per-page choice ('20'|'50'|'200'|'all'). Reading it also applies
- * a ?per_page= override from the query string to the session, so the
- * choice persists across the rest of the visit without needing to be
- * repeated in every link.
- */
-function getPerPage(): string
-{
-    if (isset($_GET['per_page']) && in_array($_GET['per_page'], PER_PAGE_OPTIONS, true)) {
-        $_SESSION['per_page'] = $_GET['per_page'];
-    }
-    $value = $_SESSION['per_page'] ?? getSetting('items_per_page_default', '20');
-    return in_array($value, PER_PAGE_OPTIONS, true) ? $value : '20';
-}
-
-/** Same as getPerPage() but as an int, or null for "all" (no LIMIT). */
-function getPerPageInt(): ?int
-{
-    $value = getPerPage();
-    return $value === 'all' ? null : (int)$value;
-}
-
-/**
- * Bootstrap pagination control. $queryParams are merged with page=N for
- * each link (pass whatever filters/sort/per_page are currently active so
- * they're preserved when moving between pages).
- */
-function renderPagination(int $currentPage, int $totalPages, array $queryParams): void
-{
-    if ($totalPages <= 1) {
-        return;
-    }
-    $link = function (int $page) use ($queryParams): string {
-        return '?' . http_build_query(array_merge($queryParams, ['page' => $page]));
-    };
-    echo '<nav aria-label="Pagination"><ul class="pagination justify-content-center">';
-    echo '<li class="page-item' . ($currentPage <= 1 ? ' disabled' : '') . '"><a class="page-link" href="' . e($link(max(1, $currentPage - 1))) . '">&laquo;</a></li>';
-
-    $start = max(1, $currentPage - 2);
-    $end = min($totalPages, $currentPage + 2);
-    if ($start > 1) {
-        echo '<li class="page-item"><a class="page-link" href="' . e($link(1)) . '">1</a></li>';
-        if ($start > 2) echo '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
-    }
-    for ($p = $start; $p <= $end; $p++) {
-        echo '<li class="page-item' . ($p === $currentPage ? ' active' : '') . '"><a class="page-link" href="' . e($link($p)) . '">' . $p . '</a></li>';
-    }
-    if ($end < $totalPages) {
-        if ($end < $totalPages - 1) echo '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
-        echo '<li class="page-item"><a class="page-link" href="' . e($link($totalPages)) . '">' . $totalPages . '</a></li>';
-    }
-
-    echo '<li class="page-item' . ($currentPage >= $totalPages ? ' disabled' : '') . '"><a class="page-link" href="' . e($link(min($totalPages, $currentPage + 1))) . '">&raquo;</a></li>';
-    echo '</ul></nav>';
-}
-
-// ---------------------------------------------------------------
-// Customer auth helpers (storefront)
-// ---------------------------------------------------------------
-function currentCustomer(): ?array
-{
-    if (empty($_SESSION['customer_id'])) {
-        return null;
-    }
-    static $customer = null;
-    if ($customer === null) {
-        $stmt = db()->prepare('SELECT * FROM customers WHERE id = ?');
-        $stmt->execute([$_SESSION['customer_id']]);
-        $customer = $stmt->fetch() ?: null;
-    }
-    return $customer;
-}
-
-function requireCustomerLogin(): void
-{
-    if (!currentCustomer()) {
-        setFlash('error', 'Please sign in to continue.');
-        redirect(rtrim(SITE_URL, '/') . '/login.php');
-    }
-}
-
-// ---------------------------------------------------------------
-// Brute-force throttle (login.php, admin/login.php, forgot_password.php).
-// Backed by the login_attempts table (sql/schema.sql) rather than the
-// session, since a session resets the moment an attacker starts a fresh
-// one - the whole point is to survive that. $identifier is normally
-// "ip|lowercased-username-or-email" so a limit on one account/IP pair
-// doesn't lock out every other visitor sharing the same IP (e.g. behind
-// NAT/a corporate proxy) from *other* accounts.
-// ---------------------------------------------------------------
-function loginAttemptIdentifier(string $account): string
-{
-    return ($_SERVER['REMOTE_ADDR'] ?? 'unknown') . '|' . strtolower(trim($account));
-}
-
-function isRateLimited(string $identifier, int $maxAttempts = 5, int $windowMinutes = 15): bool
-{
-    $stmt = db()->prepare(
-        'SELECT COUNT(*) FROM login_attempts WHERE identifier = ? AND created_at > DATE_SUB(NOW(), INTERVAL ? MINUTE)'
-    );
-    $stmt->execute([$identifier, $windowMinutes]);
-    return (int)$stmt->fetchColumn() >= $maxAttempts;
-}
-
-function recordFailedLoginAttempt(string $identifier): void
-{
-    db()->prepare('INSERT INTO login_attempts (identifier) VALUES (?)')->execute([$identifier]);
-}
-
-function clearLoginAttempts(string $identifier): void
-{
-    db()->prepare('DELETE FROM login_attempts WHERE identifier = ?')->execute([$identifier]);
 }

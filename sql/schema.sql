@@ -94,6 +94,23 @@ CREATE TABLE products (
     max_order_quantity INT UNSIGNED NULL,
     weight_kg DECIMAL(8,2) NULL,
     status ENUM('active','draft','archived') NOT NULL DEFAULT 'active',
+    -- v2.00 - warranty/battery/hygiene disclosure fields (Admin -> Products
+    -- -> edit). statutory_warranty_months defaults to the EU minimum (24) -
+    -- the app doesn't enforce jurisdiction-specific legal minimums, this is
+    -- an editable starting default like the rest of the seeded legal
+    -- content (see the `pages` seed rows below). manufacturer_warranty_months
+    -- NULL = no manufacturer warranty offered beyond the statutory one.
+    statutory_warranty_months INT UNSIGNED NOT NULL DEFAULT 24,
+    manufacturer_warranty_months INT UNSIGNED NULL,
+    manufacturer_warranty_notes VARCHAR(500) NULL,
+    -- Batteries Directive take-back disclosure (see the 'battery-return'
+    -- page below) shown wherever this product appears in an order.
+    contains_battery TINYINT(1) NOT NULL DEFAULT 0,
+    -- Excludes this item from the withdrawal flow once unsealed, for
+    -- health/hygiene reasons (Art. 16(e) Consumer Rights Directive /
+    -- §312g Abs. 2 Nr. 3 BGB) - enforced server-side in
+    -- Controllers\Storefront\WithdrawalController, not just hidden client-side.
+    is_hygiene_product TINYINT(1) NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
@@ -418,6 +435,12 @@ CREATE TABLE orders (
     billing_country VARCHAR(100) NULL,
     customer_notes VARCHAR(500) NULL,
     admin_notes VARCHAR(500) NULL,
+    -- v2.00 - stamped the first time an admin transitions this order to
+    -- 'shipped' (Admin -> Orders). Models\WithdrawalRequest::calculateDeadline()
+    -- uses this (falling back to created_at if never shipped) as a proxy
+    -- for delivery date, since the app doesn't track real carrier
+    -- delivery confirmation.
+    shipped_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
@@ -733,4 +756,344 @@ INSERT INTO menu_items (location, label, link_type, link_value, sort_order) VALU
     ('footer', 'About Us', 'page', 'about-us', 1),
     ('footer', 'Legal Notice', 'page', 'legal-notice', 2),
     ('footer', 'Privacy Policy', 'page', 'privacy-policy', 3),
-    ('footer', 'Copyright', 'page', 'copyright', 4);
+    ('footer', 'Copyright', 'page', 'copyright', 4),
+    -- v2.00 additions - see the tables/seed data below.
+    ('footer', 'Contact', 'custom', 'contact.php', 5),
+    ('footer', 'Terms & Conditions', 'page', 'terms-conditions', 6),
+    ('footer', 'Right of Withdrawal', 'page', 'right-of-withdrawal', 7);
+
+-- ================================================================
+-- v2.00 additions - OOP rewrite + legal/compliance features. See
+-- CHANGELOG.md and CLAUDE.md for the full architecture writeup.
+-- ================================================================
+
+-- ------------------------------------------------------------
+-- New settings (Admin -> Settings -> Company / Legal, and -> Withdrawal).
+-- Company fields are blank by default and only appear on invoices/legal
+-- pages once filled in (see Services\CheckoutService's InvoiceGenerator
+-- call and the 'legal-notice'/'right-of-withdrawal' pages) - same
+-- graceful-degradation pattern as the existing bank_* settings.
+-- ------------------------------------------------------------
+INSERT INTO settings (setting_key, setting_value) VALUES
+    ('vat_id', ''),
+    ('company_registration_number', ''),
+    ('company_legal_name', ''),
+    -- Right-of-withdrawal deadline = shipped_at (or created_at if never
+    -- shipped) + assumed_delivery_days_after_shipment + withdrawal_period_days.
+    -- See Models\WithdrawalRequest::calculateDeadline()'s docblock for why
+    -- this is a pragmatic proxy, not a claim of exact legal precision.
+    ('withdrawal_period_days', '14'),
+    ('assumed_delivery_days_after_shipment', '3');
+
+-- ------------------------------------------------------------
+-- New CMS pages (placeholder-labeled the same way as legal-notice/
+-- privacy-policy above - a starting template, not certified legal advice).
+-- right-of-withdrawal carries genuine EU-model structure/text (the 14-day
+-- right, how to exercise it, the model cancellation form, the hygiene-
+-- goods exception) since that much is fairly standardized boilerplate,
+-- but still needs the shop's real name/address/contact filled in before
+-- going live.
+-- ------------------------------------------------------------
+INSERT INTO pages (slug, language, title, content, is_system) VALUES
+    ('terms-conditions', 'en', 'Terms & Conditions',
+     '<p><strong>Placeholder content - replace with your actual Terms &amp; Conditions before going live.</strong></p>
+      <p>A typical shop''s terms cover: contract formation (when an order becomes binding), prices and payment
+      methods, delivery terms and timelines, retention of title until payment is received, warranty/liability terms,
+      and how disputes are resolved. Have this reviewed by a qualified professional for your jurisdiction.</p>', 1),
+    ('terms-conditions', 'de', 'Allgemeine Geschäftsbedingungen',
+     '<p><strong>Platzhalterinhalt - vor dem Livegang durch Ihre tatsächlichen AGB ersetzen.</strong></p>
+      <p>Typische AGB umfassen: Vertragsschluss (wann eine Bestellung verbindlich wird), Preise und Zahlungsarten,
+      Lieferbedingungen und -fristen, Eigentumsvorbehalt bis zur vollständigen Zahlung, Gewährleistung/Haftung, sowie
+      die Beilegung von Streitigkeiten. Lassen Sie dies von einer fachkundigen Person für Ihre Rechtsordnung prüfen.</p>', 1),
+    ('terms-conditions', 'fr', 'Conditions générales de vente',
+     '<p><strong>Contenu provisoire - à remplacer par vos véritables conditions générales de vente avant la mise en ligne.</strong></p>
+      <p>Des CGV type couvrent : la formation du contrat (quand une commande devient contraignante), les prix et
+      moyens de paiement, les conditions et délais de livraison, la réserve de propriété jusqu''au paiement complet,
+      la garantie/responsabilité, et le règlement des litiges. Faites relire ce contenu par un professionnel qualifié
+      pour votre juridiction.</p>', 1),
+
+    ('right-of-withdrawal', 'en', 'Right of Withdrawal',
+     '<p><strong>Template content based on the standard EU model instructions - replace the bracketed details with
+      your own and have it reviewed before going live.</strong></p>
+      <h3>Right of Withdrawal</h3>
+      <p>You have the right to withdraw from this contract within 14 days without giving any reason. The withdrawal
+      period will expire 14 days from the day on which you (or a third party you named) acquire physical possession
+      of the goods. To exercise the right of withdrawal, you must inform us ([Company name], [Address], [Email]) of
+      your decision by a clear statement (e.g. a letter sent by post or email), or by using the withdrawal request
+      form available from your account order history. To meet the withdrawal deadline, it is sufficient for you to
+      send your communication concerning your exercise of the right of withdrawal before the withdrawal period has
+      expired.</p>
+      <h3>Effects of Withdrawal</h3>
+      <p>If you withdraw from this contract, we will reimburse all payments received from you, including delivery
+      costs (except for supplementary costs from choosing a delivery type other than the least expensive standard
+      delivery we offer), without undue delay and in any event not later than 14 days from the day on which we are
+      informed of your decision to withdraw. You will have to bear the direct cost of returning the goods.</p>
+      <h3>Exceptions</h3>
+      <p>The right of withdrawal does not apply to goods that are not suitable for return due to health protection
+      or hygiene reasons once unsealed after delivery (products flagged as such are marked at checkout and in your
+      order history).</p>
+      <h3>Model Withdrawal Form</h3>
+      <p>(complete and submit this form only if you wish to withdraw from the contract) - or use the withdrawal
+      request form linked from your order in your account.<br>
+      To [Company name, Address, Email]:<br>
+      I/We hereby give notice that I/We withdraw from my/our contract of sale of the following goods:
+      [description of goods], ordered on [date], received on [date].<br>
+      Name of consumer(s), address, date.</p>', 1),
+    ('right-of-withdrawal', 'de', 'Widerrufsrecht',
+     '<p><strong>Vorlage auf Basis der EU-Muster-Widerrufsbelehrung - Angaben in Klammern durch Ihre eigenen ersetzen
+      und vor dem Livegang prüfen lassen.</strong></p>
+      <h3>Widerrufsrecht</h3>
+      <p>Sie haben das Recht, binnen vierzehn Tagen ohne Angabe von Gründen diesen Vertrag zu widerrufen. Die
+      Widerrufsfrist beträgt vierzehn Tage ab dem Tag, an dem Sie oder ein von Ihnen benannter Dritter die Waren in
+      Besitz genommen haben. Um Ihr Widerrufsrecht auszuüben, müssen Sie uns ([Firmenname], [Adresse], [E-Mail])
+      mittels einer eindeutigen Erklärung (z. B. Brief oder E-Mail) über Ihren Entschluss informieren, oder das
+      Widerrufsformular in Ihrem Kundenkonto bei der jeweiligen Bestellung nutzen. Zur Wahrung der Widerrufsfrist
+      reicht es aus, dass Sie die Mitteilung vor Ablauf der Widerrufsfrist absenden.</p>
+      <h3>Folgen des Widerrufs</h3>
+      <p>Wenn Sie diesen Vertrag widerrufen, erstatten wir Ihnen alle Zahlungen, die wir von Ihnen erhalten haben,
+      einschließlich der Lieferkosten (mit Ausnahme der zusätzlichen Kosten, die sich daraus ergeben, dass Sie eine
+      andere Art der Lieferung als die von uns angebotene, günstigste Standardlieferung gewählt haben), unverzüglich
+      und spätestens binnen vierzehn Tagen ab dem Tag, an dem die Mitteilung über Ihren Widerruf bei uns eingegangen
+      ist. Sie tragen die unmittelbaren Kosten der Rücksendung der Waren.</p>
+      <h3>Ausnahmen</h3>
+      <p>Das Widerrufsrecht besteht nicht bei Waren, die aus Gründen des Gesundheitsschutzes oder der Hygiene nicht
+      zur Rückgabe geeignet sind, wenn ihre Versiegelung nach der Lieferung entfernt wurde (entsprechend
+      gekennzeichnete Produkte werden beim Checkout und in Ihrer Bestellhistorie markiert).</p>
+      <h3>Muster-Widerrufsformular</h3>
+      <p>(wenn Sie den Vertrag widerrufen wollen, füllen Sie dieses Formular aus und senden Sie es zurück) - oder
+      nutzen Sie das Widerrufsformular bei Ihrer Bestellung im Kundenkonto.<br>
+      An [Firmenname, Adresse, E-Mail]:<br>
+      Hiermit widerrufe(n) ich/wir den von mir/uns abgeschlossenen Vertrag über den Kauf der folgenden Waren:
+      [Bezeichnung der Waren], bestellt am [Datum], erhalten am [Datum].<br>
+      Name der Verbraucher, Anschrift, Datum.</p>', 1),
+    ('right-of-withdrawal', 'fr', 'Droit de rétractation',
+     '<p><strong>Modèle basé sur les instructions types de l''UE - remplacez les mentions entre crochets par les
+      vôtres et faites relire ce contenu avant la mise en ligne.</strong></p>
+      <h3>Droit de rétractation</h3>
+      <p>Vous disposez d''un délai de 14 jours pour exercer votre droit de rétractation sans avoir à justifier de
+      motifs. Le délai de rétractation expire 14 jours après le jour où vous (ou un tiers que vous avez désigné)
+      prenez physiquement possession des biens. Pour exercer ce droit, vous devez nous notifier ([Raison sociale],
+      [Adresse], [E-mail]) votre décision au moyen d''une déclaration dénuée d''ambiguïté (lettre ou e-mail), ou en
+      utilisant le formulaire de rétractation disponible depuis votre compte client. Pour respecter le délai, il
+      suffit que vous transmettiez votre communication avant l''expiration du délai de rétractation.</p>
+      <h3>Effets de la rétractation</h3>
+      <p>En cas de rétractation, nous vous remboursons tous les paiements reçus, y compris les frais de livraison
+      (à l''exception des frais supplémentaires découlant du choix d''un mode de livraison autre que le mode standard
+      le moins coûteux que nous proposons), sans retard excessif et au plus tard 14 jours à compter du jour où nous
+      sommes informés de votre décision de rétractation. Les frais directs de renvoi des biens restent à votre
+      charge.</p>
+      <h3>Exceptions</h3>
+      <p>Le droit de rétractation ne s''applique pas aux biens descellés après livraison qui ne peuvent être renvoyés
+      pour des raisons d''hygiène ou de protection de la santé (les produits concernés sont signalés lors du
+      paiement et dans votre historique de commandes).</p>
+      <h3>Formulaire type de rétractation</h3>
+      <p>(veuillez compléter et renvoyer ce formulaire uniquement si vous souhaitez vous rétracter) - ou utilisez le
+      formulaire de rétractation lié à votre commande dans votre compte.<br>
+      À l''attention de [Raison sociale, Adresse, E-mail] :<br>
+      Je/nous vous notifie/notifions par la présente ma/notre rétractation du contrat portant sur la vente du bien
+      suivant : [désignation du bien], commandé le [date], reçu le [date].<br>
+      Nom du/des consommateur(s), adresse, date.</p>', 1),
+
+    ('battery-return', 'en', 'Battery Take-Back',
+     '<p><strong>Placeholder content - replace with your actual battery take-back arrangements before going live.</strong></p>
+      <p>Products marked as containing a battery can be returned free of charge, separately from any other waste,
+      either to [our stores/collection point address] or to any public battery collection point near you. Batteries
+      must not be disposed of with household waste - the crossed-out wheeled bin symbol on the battery or its
+      packaging indicates this. Returning used batteries helps prevent environmental harm from the substances they
+      contain.</p>', 1),
+    ('battery-return', 'de', 'Batterie-Rücknahme',
+     '<p><strong>Platzhalterinhalt - vor dem Livegang durch Ihre tatsächlichen Rücknahmeregelungen ersetzen.</strong></p>
+      <p>Produkte, die als batteriehaltig gekennzeichnet sind, können unentgeltlich getrennt vom sonstigen Abfall
+      zurückgegeben werden - entweder an [unsere Verkaufsstelle/Sammeladresse] oder an jeder öffentlichen
+      Batteriesammelstelle in Ihrer Nähe. Batterien dürfen nicht mit dem Hausmüll entsorgt werden - das Symbol der
+      durchgestrichenen Mülltonne auf der Batterie oder deren Verpackung weist darauf hin. Die Rückgabe gebrauchter
+      Batterien hilft, Umweltschäden durch die enthaltenen Stoffe zu vermeiden.</p>', 1),
+    ('battery-return', 'fr', 'Reprise des piles et batteries',
+     '<p><strong>Contenu provisoire - à remplacer par vos véritables modalités de reprise avant la mise en ligne.</strong></p>
+      <p>Les produits signalés comme contenant une pile ou une batterie peuvent être rapportés gratuitement,
+      séparément des autres déchets, soit à [notre magasin/point de collecte] soit à tout point de collecte public
+      près de chez vous. Les piles et batteries ne doivent pas être jetées avec les ordures ménagères - le symbole
+      de la poubelle barrée figurant sur la pile ou son emballage l''indique. Le retour des piles usagées contribue
+      à prévenir les dommages environnementaux causés par les substances qu''elles contiennent.</p>', 1);
+
+-- ------------------------------------------------------------
+-- New email templates (Admin -> Email Templates). Seeded en/de only -
+-- same fallback-to-English-for-fr gap the existing keys already have
+-- (see includes/lang/fr.php vs. the email_templates table, unrelated
+-- mechanisms - Mailer::getTemplate() falls back to 'en' when a language
+-- has no override for a key, so this isn't a regression).
+-- ------------------------------------------------------------
+INSERT INTO email_templates (template_key, language, subject, body_html) VALUES
+    ('contact_form_notify_shop', 'en', 'New contact message from {{name}}',
+     '<h2 style="margin-top:0;">New contact form submission</h2><p><strong>From:</strong> {{name}} ({{email}})</p><p><strong>Subject:</strong> {{subject}}</p><p>{{message}}</p>'),
+    ('contact_form_notify_shop', 'de', 'Neue Kontaktnachricht von {{name}}',
+     '<h2 style="margin-top:0;">Neue Kontaktformular-Nachricht</h2><p><strong>Von:</strong> {{name}} ({{email}})</p><p><strong>Betreff:</strong> {{subject}}</p><p>{{message}}</p>'),
+    ('contact_form_confirmation', 'en', 'We received your message - {{shop_name}}',
+     '<h2 style="margin-top:0;">Thanks for reaching out, {{name}}!</h2><p>We''ve received your message and will get back to you as soon as possible.</p>'),
+    ('contact_form_confirmation', 'de', 'Wir haben Ihre Nachricht erhalten - {{shop_name}}',
+     '<h2 style="margin-top:0;">Danke für Ihre Nachricht, {{name}}!</h2><p>Wir haben Ihre Nachricht erhalten und melden uns so schnell wie möglich bei Ihnen.</p>'),
+
+    ('withdrawal_request_received', 'en', 'We received your withdrawal request for order {{order_number}}',
+     '<h2 style="margin-top:0;">Withdrawal request received</h2><p>Hi {{customer_name}}, we''ve received your request to withdraw from order <strong>{{order_number}}</strong>. We''ll review it and get back to you shortly.</p>'),
+    ('withdrawal_request_received', 'de', 'Wir haben Ihren Widerruf zu Bestellung {{order_number}} erhalten',
+     '<h2 style="margin-top:0;">Widerruf erhalten</h2><p>Hallo {{customer_name}}, wir haben Ihren Widerruf zur Bestellung <strong>{{order_number}}</strong> erhalten und melden uns in Kürze bei Ihnen.</p>'),
+    ('withdrawal_request_notify_shop', 'en', 'Withdrawal request for order {{order_number}}',
+     '<h2 style="margin-top:0;">New withdrawal request</h2><p>Order <strong>{{order_number}}</strong> - reason given: {{reason}}</p>'),
+    ('withdrawal_request_notify_shop', 'de', 'Widerruf zu Bestellung {{order_number}}',
+     '<h2 style="margin-top:0;">Neuer Widerruf</h2><p>Bestellung <strong>{{order_number}}</strong> - angegebener Grund: {{reason}}</p>'),
+    ('withdrawal_request_approved', 'en', 'Your withdrawal request for order {{order_number}} was approved',
+     '<h2 style="margin-top:0;">Withdrawal approved</h2><p>Hi {{customer_name}}, your withdrawal for order <strong>{{order_number}}</strong> has been approved. {{admin_notes}}</p>'),
+    ('withdrawal_request_approved', 'de', 'Ihr Widerruf zu Bestellung {{order_number}} wurde genehmigt',
+     '<h2 style="margin-top:0;">Widerruf genehmigt</h2><p>Hallo {{customer_name}}, Ihr Widerruf zur Bestellung <strong>{{order_number}}</strong> wurde genehmigt. {{admin_notes}}</p>'),
+    ('withdrawal_request_rejected', 'en', 'Your withdrawal request for order {{order_number}} was rejected',
+     '<h2 style="margin-top:0;">Withdrawal rejected</h2><p>Hi {{customer_name}}, your withdrawal for order <strong>{{order_number}}</strong> was rejected. {{admin_notes}}</p>'),
+    ('withdrawal_request_rejected', 'de', 'Ihr Widerruf zu Bestellung {{order_number}} wurde abgelehnt',
+     '<h2 style="margin-top:0;">Widerruf abgelehnt</h2><p>Hallo {{customer_name}}, Ihr Widerruf zur Bestellung <strong>{{order_number}}</strong> wurde abgelehnt. {{admin_notes}}</p>'),
+
+    ('rma_ticket_received', 'en', 'We received your defect report for order {{order_number}}',
+     '<h2 style="margin-top:0;">Defect report received</h2><p>Hi {{customer_name}}, we''ve received your report for <strong>{{product_name}}</strong> from order {{order_number}}. We''ll review it and get back to you.</p>'),
+    ('rma_ticket_received', 'de', 'Wir haben Ihre Mängelmeldung zu Bestellung {{order_number}} erhalten',
+     '<h2 style="margin-top:0;">Mängelmeldung erhalten</h2><p>Hallo {{customer_name}}, wir haben Ihre Meldung zu <strong>{{product_name}}</strong> aus Bestellung {{order_number}} erhalten und melden uns bei Ihnen.</p>'),
+    ('rma_ticket_notify_shop', 'en', 'Defect report for order {{order_number}}',
+     '<h2 style="margin-top:0;">New RMA ticket</h2><p>Order <strong>{{order_number}}</strong>, product: {{product_name}}, claim type: {{warranty_claim_type}}</p><p>{{defect_description}}</p>'),
+    ('rma_ticket_notify_shop', 'de', 'Mängelmeldung zu Bestellung {{order_number}}',
+     '<h2 style="margin-top:0;">Neues RMA-Ticket</h2><p>Bestellung <strong>{{order_number}}</strong>, Produkt: {{product_name}}, Garantieart: {{warranty_claim_type}}</p><p>{{defect_description}}</p>'),
+    ('rma_ticket_status_update', 'en', 'Update on your defect report for order {{order_number}}',
+     '<h2 style="margin-top:0;">Your RMA ticket status has changed</h2><p>Order <strong>{{order_number}}</strong> is now:</p><p style="font-size:18px;font-weight:bold;text-transform:uppercase;">{{status}}</p>{{resolution_notes}}'),
+    ('rma_ticket_status_update', 'de', 'Update zu Ihrer Mängelmeldung für Bestellung {{order_number}}',
+     '<h2 style="margin-top:0;">Ihr RMA-Ticket-Status hat sich geändert</h2><p>Bestellung <strong>{{order_number}}</strong> hat jetzt den Status:</p><p style="font-size:18px;font-weight:bold;text-transform:uppercase;">{{status}}</p>{{resolution_notes}}');
+
+-- ------------------------------------------------------------
+-- Contact form (Controllers\Storefront\ContactController). Rate-limited
+-- via Services\RateLimiter bound to contact_message_attempts (same class,
+-- shape, and purpose as login_attempts - see that table's comment).
+-- ------------------------------------------------------------
+CREATE TABLE contact_messages (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    email VARCHAR(190) NOT NULL,
+    subject VARCHAR(200) NULL,
+    message TEXT NOT NULL,
+    order_number VARCHAR(32) NULL,
+    customer_id INT UNSIGNED NULL,
+    ip_address VARCHAR(45) NULL,
+    status ENUM('new','read','replied','closed') NOT NULL DEFAULT 'new',
+    admin_notes VARCHAR(500) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
+    INDEX idx_contact_messages_status (status)
+) ENGINE=InnoDB;
+
+CREATE TABLE contact_message_attempts (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    identifier VARCHAR(255) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_contact_attempts_identifier (identifier, created_at)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Right of withdrawal (Widerrufsrecht) - functional self-service flow,
+-- not just the disclosure page above. withdrawal_request_items lets a
+-- request cover a subset of an order's items, since is_hygiene_product
+-- items must be excludable individually (see products.is_hygiene_product).
+-- Models\WithdrawalRequest extends the shared Models\CustomerRequest base
+-- it has in common with Models\RmaTicket below.
+-- ------------------------------------------------------------
+CREATE TABLE withdrawal_requests (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    order_id INT UNSIGNED NOT NULL,
+    customer_id INT UNSIGNED NULL,
+    reason TEXT NULL,
+    status ENUM('submitted','under_review','approved','rejected','refunded','cancelled') NOT NULL DEFAULT 'submitted',
+    requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Snapshotted at submission time (see Models\WithdrawalRequest::calculateDeadline())
+    -- rather than recomputed later, so a later change to the
+    -- withdrawal_period_days/assumed_delivery_days_after_shipment settings
+    -- never retroactively moves an already-submitted request's deadline.
+    deadline_at DATETIME NOT NULL,
+    admin_notes VARCHAR(500) NULL,
+    processed_by INT UNSIGNED NULL,
+    processed_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
+    FOREIGN KEY (processed_by) REFERENCES admin_users(id) ON DELETE SET NULL,
+    UNIQUE KEY uniq_withdrawal_order (order_id),
+    INDEX idx_withdrawal_status (status)
+) ENGINE=InnoDB;
+
+CREATE TABLE withdrawal_request_items (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    withdrawal_request_id INT UNSIGNED NOT NULL,
+    order_item_id INT UNSIGNED NOT NULL,
+    FOREIGN KEY (withdrawal_request_id) REFERENCES withdrawal_requests(id) ON DELETE CASCADE,
+    FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE CASCADE,
+    UNIQUE KEY uniq_withdrawal_item (withdrawal_request_id, order_item_id)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- RMA / defect tickets - warranty-based returns, distinct from the no-
+-- reason-needed withdrawal right above (different legal basis, different
+-- (much longer) time window - see products.statutory_warranty_months/
+-- manufacturer_warranty_months and Models\RmaTicket::isEligible()).
+-- Item-level (order_item_id), not order-level, since a defect claim is
+-- always about one specific product.
+-- ------------------------------------------------------------
+CREATE TABLE rma_tickets (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    order_id INT UNSIGNED NOT NULL,
+    order_item_id INT UNSIGNED NOT NULL,
+    customer_id INT UNSIGNED NULL,
+    defect_description TEXT NOT NULL,
+    warranty_claim_type ENUM('statutory','manufacturer') NOT NULL DEFAULT 'statutory',
+    status ENUM('submitted','under_review','awaiting_return','approved','rejected','repaired','replaced','refunded','closed') NOT NULL DEFAULT 'submitted',
+    resolution_notes VARCHAR(500) NULL,
+    admin_notes VARCHAR(500) NULL,
+    requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processed_by INT UNSIGNED NULL,
+    processed_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
+    FOREIGN KEY (processed_by) REFERENCES admin_users(id) ON DELETE SET NULL,
+    INDEX idx_rma_status (status)
+) ENGINE=InnoDB;
+
+-- Defect photo evidence - up to 5 per ticket (enforced in
+-- Controllers\Storefront\RmaController), validated the same
+-- extension-whitelist-plus-real-content-check way as
+-- admin/product_images.php (see docs/SECURITY_AUDIT.md finding #6).
+CREATE TABLE rma_ticket_attachments (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    rma_ticket_id INT UNSIGNED NOT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (rma_ticket_id) REFERENCES rma_tickets(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Legal documents (Admin -> Legal Documents) - either an uploaded PDF or
+-- one generated on the fly from admin-typed text via
+-- Services\PdfDocumentGenerator (built on the same SimplePdf writer
+-- InvoiceGenerator already uses - no new dependency). `type` is a free
+-- string key (not an ENUM) so a new document type never needs a schema
+-- change - 'cancellation_policy' and 'warranty_terms' are just the two
+-- the admin UI suggests out of the box.
+-- ------------------------------------------------------------
+CREATE TABLE legal_documents (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    type VARCHAR(60) NOT NULL,
+    language VARCHAR(5) NOT NULL DEFAULT 'en',
+    title VARCHAR(200) NOT NULL,
+    source_mode ENUM('uploaded','generated') NOT NULL,
+    file_path VARCHAR(255) NULL,
+    generated_text LONGTEXT NULL,
+    generated_pdf_path VARCHAR(255) NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_legal_doc_type_lang (type, language)
+) ENGINE=InnoDB;

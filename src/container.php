@@ -1,0 +1,161 @@
+<?php
+
+/**
+ * Builds the Container. Returns a factory closure rather than a built
+ * Container directly, because the one thing that legitimately differs
+ * between the storefront and admin front controllers is *which views
+ * directory + slot resolution* Renderer uses (storefront is theme-package
+ * aware via ThemeManager; admin has a single fixed layout, same as today -
+ * there's no "admin/themes/" mechanism to preserve). Everything else
+ * (Session, Csrf, FlashBag, SettingsRepository, Mailer, ...) is identical
+ * either way.
+ *
+ *   $makeContainer = require __DIR__ . '/src/bootstrap.php';
+ *   $container = $makeContainer(isAdmin: false); // or true, from admin/index.php
+ */
+
+use ShopRex\Core\Container;
+use ShopRex\Core\Registry;
+use ShopRex\Core\Session;
+use ShopRex\Core\Csrf;
+use ShopRex\Core\FlashBag;
+use ShopRex\Core\Renderer;
+use ShopRex\Core\ThemeManager;
+use ShopRex\Services\CategoryTreeService;
+use ShopRex\Services\DiscountCalculator;
+use ShopRex\Services\I18n;
+use ShopRex\Services\MenuTreeService;
+use ShopRex\Services\PerPageResolver;
+use ShopRex\Services\SettingsRepository;
+use ShopRex\Services\TaxCalculator;
+use ShopRex\Services\TranslationOverlay;
+use ShopRex\Models\Cart;
+use ShopRex\Payment\PaymentGatewayFactory;
+use ShopRex\Payment\PaymentSettings;
+
+// includes/Cart.php is deliberately still loaded as-is (global, unnamespaced
+// `Cart` static class) rather than ported yet - includes/header.php calls
+// the unqualified `Cart::count()` directly and is one of the templates
+// intentionally NOT rewritten (see Core\Renderer's docblock), so that exact
+// call must keep resolving. Phase 3 replaces the *internals* this delegates
+// to (session-backed instance behind Models\Cart) without changing that
+// header.php call site at all.
+require_once dirname(__DIR__) . '/includes/Cart.php';
+
+// includes/SimplePdf.php / InvoiceGenerator.php / Mailer.php are likewise
+// loaded as-is (global, unnamespaced classes) rather than ported to
+// Services\* in this pass - they're already proper classes (not the
+// procedural functions the OOP rewrite targets), and Services\CheckoutService
+// (Phase 4) only ever calls their existing static entry points
+// (InvoiceGenerator::generateForOrder(), Mailer::sendOrderConfirmation()).
+// Converting them to constructor-injected instances is worthwhile future
+// polish, deliberately deferred rather than done under Phase 4's already-
+// high-risk scope - tracked for the Phase 6 pass that extends Mailer with
+// new templates anyway (contact form, withdrawal, RMA).
+require_once dirname(__DIR__) . '/includes/SimplePdf.php';
+require_once dirname(__DIR__) . '/includes/InvoiceGenerator.php';
+require_once dirname(__DIR__) . '/includes/Mailer.php';
+// Same deferred-conversion rationale as the three above - Controllers\Admin\ImageCropController
+// (Phase 8, direct port of admin/image_crop.php) calls its existing static
+// ImageProcessor::isSupported()/cropAndSave() entry points unchanged.
+require_once dirname(__DIR__) . '/includes/ImageProcessor.php';
+
+return function (bool $isAdmin = false): Container {
+    $container = new Container();
+
+    $container->singleton(\PDO::class, fn () => Database::getConnection());
+
+    $container->singleton(Session::class, fn () => new Session());
+    $container->singleton(Csrf::class, fn (Container $c) => new Csrf($c->make(Session::class)));
+    $container->singleton(FlashBag::class, fn (Container $c) => new FlashBag($c->make(Session::class)));
+
+    $container->singleton(SettingsRepository::class, fn (Container $c) => new SettingsRepository($c->make(\PDO::class)));
+
+    $container->singleton(CategoryTreeService::class, fn (Container $c) => new CategoryTreeService($c->make(\PDO::class), $c->make(SettingsRepository::class)));
+    $container->singleton(MenuTreeService::class, fn (Container $c) => new MenuTreeService($c->make(\PDO::class), $c->make(CategoryTreeService::class)));
+    $container->singleton(DiscountCalculator::class, fn () => new DiscountCalculator());
+    $container->singleton(TaxCalculator::class, fn (Container $c) => new TaxCalculator($c->make(\PDO::class), $c->make(SettingsRepository::class), $c->make(DiscountCalculator::class)));
+    $container->singleton(TranslationOverlay::class, fn (Container $c) => new TranslationOverlay($c->make(\PDO::class), $c->make(SettingsRepository::class)));
+    $container->singleton(PerPageResolver::class, fn (Container $c) => new PerPageResolver($c->make(SettingsRepository::class)));
+
+    $container->singleton(Cart::class, fn (Container $c) => new Cart(
+        $c->make(Session::class),
+        $c->make(\PDO::class),
+        $c->make(TranslationOverlay::class),
+        $c->make(DiscountCalculator::class),
+        $c->make(TaxCalculator::class)
+    ));
+
+    $container->singleton(PaymentSettings::class, fn (Container $c) => new PaymentSettings($c->make(SettingsRepository::class)));
+    $container->singleton(PaymentGatewayFactory::class, fn (Container $c) => new PaymentGatewayFactory($c->make(PaymentSettings::class)));
+
+    $container->singleton(\ShopRex\Services\CheckoutService::class, fn (Container $c) => new \ShopRex\Services\CheckoutService(
+        $c->make(\PDO::class),
+        $c->make(Cart::class),
+        $c->make(PaymentGatewayFactory::class),
+        $c->make(SettingsRepository::class)
+    ));
+
+    // Shared by login.php/register.php/forgot_password.php (this instance)
+    // and, from Phase 6, a second instance bound to contact_message_attempts
+    // for the contact form.
+    $container->singleton(\ShopRex\Services\RateLimiter::class, fn (Container $c) => new \ShopRex\Services\RateLimiter($c->make(\PDO::class), 'login_attempts'));
+    // Second RateLimiter instance, same class, bound to a different table -
+    // see Services\RateLimiter's docblock.
+    $container->singleton('RateLimiter.contact', fn (Container $c) => new \ShopRex\Services\RateLimiter($c->make(\PDO::class), 'contact_message_attempts'));
+    $container->singleton(\ShopRex\Services\GdprService::class, fn (Container $c) => new \ShopRex\Services\GdprService($c->make(\PDO::class), $c->make(SettingsRepository::class)));
+    $container->singleton(\ShopRex\Services\PdfDocumentGenerator::class, fn () => new \ShopRex\Services\PdfDocumentGenerator());
+
+    $projectRoot = dirname(__DIR__);
+
+    // Always the storefront-flavored ThemeManager, regardless of whether
+    // this request is admin or storefront - Admin -> Settings' layout/
+    // color-theme pickers need to enumerate the STOREFRONT's available
+    // theme packages even though the ambient ThemeManager::class binding
+    // below is the admin-flavored one (fixed layout, no packages) on an
+    // admin request. Cheap to build twice; ThemeManager itself does no I/O
+    // until availablePackages()/resolve() are actually called.
+    $container->singleton('ThemeManager.storefront', fn (Container $c) => new ThemeManager(
+        $c->make(SettingsRepository::class),
+        $projectRoot . '/themes',
+        $projectRoot . '/src/Views/storefront/theme',
+        $projectRoot . '/src/Views/storefront/theme/default'
+    ));
+
+    if ($isAdmin) {
+        // Admin has one fixed layout - no package/override mechanism exists
+        // on this side, so manifestDir/templatesDir are both pointed at a
+        // directory that never contains a matching <package>/header.php;
+        // resolve() always falls through to coreSlotDir, i.e.
+        // src/Views/admin/layout/*.php.
+        $container->singleton(ThemeManager::class, fn (Container $c) => new ThemeManager(
+            $c->make(SettingsRepository::class),
+            $projectRoot . '/admin/themes-none',
+            $projectRoot . '/admin/themes-none',
+            $projectRoot . '/src/Views/admin/layout'
+        ));
+        $container->singleton(Renderer::class, fn (Container $c) => new Renderer(
+            $projectRoot . '/src/Views/admin',
+            $c->make(ThemeManager::class)
+        ));
+    } else {
+        // manifestDir (theme.json + style.css - stays web-servable) and
+        // templatesDir (header.php/footer.php/home.php - blocked from
+        // direct access under src/, see src/.htaccess) are deliberately
+        // different roots pointing at the same package keys - see
+        // ThemeManager's docblock. Same instance as 'ThemeManager.storefront'
+        // above - only one is actually built (Container::singleton() closures
+        // are lazy), this alias just makes ThemeManager::class resolve to it
+        // on a storefront request the same way it always has.
+        $container->singleton(ThemeManager::class, fn (Container $c) => $c->make('ThemeManager.storefront'));
+        $container->singleton(Renderer::class, fn (Container $c) => new Renderer(
+            $projectRoot . '/src/Views/storefront',
+            $c->make(ThemeManager::class)
+        ));
+    }
+
+    Registry::set($container);
+    I18n::boot($container->make(SettingsRepository::class), $projectRoot . '/includes/lang');
+
+    return $container;
+};

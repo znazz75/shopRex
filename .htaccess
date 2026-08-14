@@ -61,3 +61,21 @@ Options -Indexes
         Deny from all
     </IfModule>
 </FilesMatch>
+
+# ---------------------------------------------------------------
+# Front-controller routing (v2.00 OOP rewrite - see src/routes/web.php
+# and src/routes/admin.php). A real file or directory (uploads/, assets/,
+# themes/, any legacy .php shim that still physically exists) is always
+# served as-is first - only a request that doesn't correspond to a real
+# path falls through to a front controller, which dispatches it via
+# Core\Router. Everything under /admin goes to admin/index.php; every
+# other path goes to the storefront's index.php.
+# ---------------------------------------------------------------
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+    RewriteRule ^admin(/.*)?$ admin/index.php [L,QSA]
+    RewriteRule ^ index.php [L,QSA]
+</IfModule>

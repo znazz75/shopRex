@@ -2,7 +2,7 @@
 
 [English](README.md) | **Deutsch**
 
-[![Version](https://img.shields.io/badge/version-1.00-blue.svg)](https://github.com/znazz75/shopRex/releases)
+[![Version](https://img.shields.io/badge/version-2.00-blue.svg)](https://github.com/znazz75/shopRex/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![PHP](https://img.shields.io/badge/PHP-8.0%2B-777bb4)
 ![MySQL](https://img.shields.io/badge/MySQL-5.7%2B%20%2F%20MariaDB%2010.3%2B-4479a1)
@@ -11,17 +11,21 @@
 > Diese Übersetzung wird manuell parallel zur englischen README.md gepflegt.
 > Bei Abweichungen ist die englische Version maßgeblich.
 
-Ein einfaches PHP + MySQL Online-Shop-Framework — reines PHP (PDO, keine
-Composer-Abhängigkeiten zum Ausführen nötig), prozedural/leicht-objektorientiert,
-gedacht als Ausgangspunkt zum Weiterbauen, nicht als fertiges Produkt. Das
-Frontend läuft auf Bootstrap 5 (+ jQuery/jQuery UI für ein paar interaktive
-Admin-Tools, Quill.js für Rich-Text, Cropper.js für den Bildzuschnitt — alle
-von öffentlichen CDNs geladen, siehe [Externe Bibliotheken](#externe-bibliotheken)).
-Die gesamte Seite (Shop und Backend) ist von Haus aus dreisprachig (Englisch/
-Deutsch/Französisch), einzelne Sprachen lassen sich aktivieren/deaktivieren
-(bis hin zu nur einer, wodurch die Sprachumschaltung komplett entfällt) oder
-weitere hinzufügen, die MwSt. ist vollständig konfigurierbar, und die Kasse
-erzeugt eine echte PDF-Rechnung — siehe die Funktionsliste unten.
+Ein PHP + MySQL Online-Shop-Framework — reines PHP (PDO, keine
+Composer-Abhängigkeiten zum Ausführen nötig), objektorientiert mit einer
+Router-/Controller-/View-Struktur, gedacht als Ausgangspunkt zum
+Weiterbauen, nicht als fertiges Produkt. Das Frontend läuft auf Bootstrap 5
+(+ jQuery/jQuery UI für ein paar interaktive Admin-Tools, Quill.js für
+Rich-Text, Cropper.js für den Bildzuschnitt — alle von öffentlichen CDNs
+geladen, siehe [Externe Bibliotheken](#externe-bibliotheken)). Die gesamte
+Seite (Shop und Backend) ist von Haus aus dreisprachig (Englisch/Deutsch/
+Französisch), einzelne Sprachen lassen sich aktivieren/deaktivieren (bis
+hin zu nur einer, wodurch die Sprachumschaltung komplett entfällt) oder
+weitere hinzufügen, die MwSt. ist vollständig konfigurierbar, die Kasse
+erzeugt eine echte PDF-Rechnung, und ein funktionierendes Widerrufsrecht,
+Mängelmeldungen (RMA)/Garantie-Tickets, ein Kontaktformular sowie die
+Verwaltung von Rechtsdokumenten sind enthalten — siehe die Funktionsliste
+unten.
 
 ## Funktionen
 
@@ -30,7 +34,7 @@ erzeugt eine echte PDF-Rechnung — siehe die Funktionsliste unten.
 - **Dreisprachig (Englisch/Deutsch/Französisch) ab Werk, erweiterbar auf jede Sprache, und pro Sprache im Backend umschaltbar** — eine Sprachauswahl ist im Header verfügbar, sobald mehr als eine Sprache aktiviert ist; siehe [Sprachen](#sprachen)
 - Produktliste mit Sortierung (neueste, Preis, Name), Suche und **konfigurierbarer Paginierung** (20/50/200/alle, pro Besucher gemerkt) — siehe [Paginierung](#paginierung)
 - Kategorien mit **unbegrenzter Verschachtelung** (Kategorie > Unterkategorie > Unterkategorie > ...), mit Breadcrumbs und Dropdown-Navigation
-- **Seitensuche** über Produkte und Kategorien hinweg ([search.php](search.php))
+- **Seitensuche** über Produkte und Kategorien hinweg (`/search`)
 - Produktdetailseite mit Optionsauswahl (z. B. Größe, Farbe), bestandsbewusstem „In den Warenkorb", einer **Mehrbild-Galerie** (Bootstrap-Carousel + Vorschaubilder) mit Bildunterschrift je Bild, und **zeitlich begrenzten Rabatt-Badges** mit angezeigtem Datumsbereich — siehe [Rabatte & Verfügbarkeitszeiträume](#rabatte--verfügbarkeitszeiträume)
 - **Konfigurierbare MwSt.** — Bruttopreise (inkl. Steuer) werden überall im Shop angezeigt; Warenkorb/Kasse weisen Nettopreis und Steuer getrennt aus — siehe [MwSt.](#mwst)
 - Sitzungsbasierter Warenkorb (hinzufügen/ändern/entfernen, Live-Bestandsprüfung) mit einem **„Weiter einkaufen"-Button**, der zum zuletzt angesehenen Produkt zurückführt
@@ -38,14 +42,18 @@ erzeugt eine echte PDF-Rechnung — siehe die Funktionsliste unten.
 - Eine **PDF-Rechnung** wird an der Kasse erzeugt, in der Sprache des Kunden, mit MwSt.-Aufschlüsselung, als E-Mail-Anhang versendet und im Kundenkonto gespeichert — siehe [Rechnungen](#rechnungen)
 - Bestellbestätigungsseite + editierbare HTML-E-Mails für Registrierung, Passwort-Reset und jedes Bestellereignis — siehe [E-Mail-Vorlagen](#e-mail-vorlagen)
 - Kundenkonten (Registrierung/Login/Bestellhistorie) mit **Selbstbedienungs-Datenexport und Kontolöschung** — siehe [Datenschutz (DSGVO)](#datenschutz-dsgvo)
-- **Editierbare CMS-Seiten** — Impressum, Datenschutzerklärung, Über uns, Copyright kommen als editierbare Startinhalte mit, plus eigene Seiten lassen sich ergänzen ([page.php](page.php))
+- **Editierbare CMS-Seiten** — Impressum, Datenschutzerklärung, Über uns, Copyright kommen als editierbare Startinhalte mit, plus eigene Seiten lassen sich ergänzen (`/page/{slug}`)
 - **Editierbares Hauptmenü und Footer-Untermenü**, beide verschachtelbar, beide im Backend verwaltbar ([Menüs](#menüs))
+- **Kontaktformular** (ratenbegrenzt, Honeypot-Feld) mit Admin-Posteingang
+- **Funktionierendes Widerrufsrecht** — ein Kunde kann eine berechtigte Bestellung öffnen und einen Widerruf mit Selbstbedienung einreichen (welche Artikel, optionaler Grund), der im Backend geprüft/genehmigt wird; Hygieneartikel werden automatisch ausgeschlossen
+- **RMA-/Mängel-Tickets** — ein Problem mit einem bestimmten Bestellartikel unter gesetzlicher oder Herstellergarantie melden, mit Fotoanhängen; die Berechtigung wird aus der konfigurierten Garantiedauer des Produkts berechnet und serverseitig durchgesetzt
+- **Rechtsdokumente** pro Typ/Sprache herunterladbar (`/legal/{type}`) — Widerrufsbelehrung, Garantiebedingungen usw. — jeweils entweder als PDF hochgeladen oder im Backend aus eingegebenem Text generiert
 
 **Backend** (`/admin`)
 - **Installationsgeführte Einrichtung** — kein manueller SQL-Import nötig, siehe unten
 - **Mehrere Admin-Konten mit Rollen** — Super Admin (voller Zugriff) und Manager (nur Produkte/Kategorien/Lager/Inhalt); siehe [Admin-Rollen](#admin-rollen)
 - **Testbenutzerkonten** für Testläufe — Bestellungen unter einem Testkonto nutzen eine simulierte Zahlung, rühren nie den echten Lagerbestand an und sind aus jedem Finanzbericht ausgeschlossen; siehe [Testbenutzer](#testbenutzer)
-- Produktverwaltung (Anlegen/Bearbeiten/Löschen, Optionen/Varianten, **Rabatt + Verfügbarkeitsplanung je Artikel**, **Netto-/Brutto-Preiseingabe mit Live-Umrechnung**) plus ein eigener **Bildmanager**: mehrere Bilder je Produkt hochladen, jedes beschriften, per Drag & Drop neu anordnen, das Hauptbild festlegen, und **mit Cropper.js zuschneiden** (Zuschneidebereich und Ausgabebreite/-höhe festlegen; ein zugeschnittenes Derivat wird serverseitig mit GD erzeugt) — siehe [admin/product_images.php](admin/product_images.php) und [admin/image_crop.php](admin/image_crop.php)
+- Produktverwaltung (Anlegen/Bearbeiten/Löschen, Optionen/Varianten, **Rabatt + Verfügbarkeitsplanung je Artikel**, **Netto-/Brutto-Preiseingabe mit Live-Umrechnung**, gesetzliche/Herstellergarantiedauer je Produkt + Batterie-/Hygiene-Kennzeichnung) plus ein eigener **Bildmanager**: mehrere Bilder je Produkt hochladen, jedes beschriften, per Drag & Drop neu anordnen, das Hauptbild festlegen, und **mit Cropper.js zuschneiden** (Zuschneidebereich und Ausgabebreite/-höhe festlegen; ein zugeschnittenes Derivat wird serverseitig mit GD erzeugt)
 - Kategorieverwaltung (unbegrenzte Verschachtelung, eingerückte Auswahl der übergeordneten Kategorie, Zyklus-Vermeidung)
 - Lagerverwaltung (Bestandsmengen, manuelle Anpassungen, Bewegungsprotokoll mit klarer Kennzeichnung von Testbestellungen, Niedrigbestandswarnungen)
 - **Steuersätze** — mehrere MwSt.-Sätze mit einem als Standard markiert; MwSt. komplett ein-/ausschaltbar — siehe [MwSt.](#mwst)
@@ -56,6 +64,10 @@ erzeugt eine echte PDF-Rechnung — siehe die Funktionsliste unten.
 - Finanzverwaltung (Umsatz-Dashboard, Umsatz nach Monat/Zahlungsart, Transaktionsjournal — nur echte Bestellungen) — nur Super Admin
 - Kundenverwaltung (Liste, Bestellhistorie, sperren/entsperren, Testbenutzer anlegen, **DSGVO-Datenexport/-löschung**) — nur Super Admin
 - Bestellverwaltung (Status- und Zahlungsstatus-Updates, Kundenbenachrichtigungen, Rechnungsdownload, Testbestellungs-Badges/Filter) — nur Super Admin
+- **Kontaktnachrichten** — Posteingang für das Kontaktformular im Shop, mit Statusverfolgung — nur Super Admin
+- **Widerrufe** — Widerrufe mit Selbstbedienung prüfen/genehmigen/ablehnen, optional mit Kundenbenachrichtigung per E-Mail — nur Super Admin
+- **RMA-Tickets** — Mängelmeldungen prüfen, Lösungshinweise erfassen, optional mit Kundenbenachrichtigung per E-Mail — nur Super Admin
+- **Rechtsdokumente** — die oben verlinkten Dokumente pro Typ/Sprache verwalten, PDF hochladen oder aus eingegebenem Text generieren — nur Super Admin
 
 ## Voraussetzungen
 
@@ -93,7 +105,7 @@ erzeugt eine echte PDF-Rechnung — siehe die Funktionsliste unten.
    ohne die Datenbankverbindung anzufassen).
 
    Shop: http://localhost:8000/index.php
-   Admin: http://localhost:8000/admin/login.php
+   Admin: http://localhost:8000/admin/login
 
    *(Fortgeschrittene/unbeaufsichtigte Einrichtung: Sie können den Installer
    komplett überspringen, indem Sie selbst
@@ -141,7 +153,7 @@ HTTPS um (siehe [Sicherheit](#sicherheit)).
   vom direkten Webzugriff vollständig ausgeschlossen; `uploads/` blockiert
   die Ausführung von PHP (zusätzliche Absicherung gegen einen bösartigen
   Datei-Upload); `uploads/invoices/` ist komplett gesperrt (Rechnungen
-  werden ausschließlich über das auth-geprüfte `invoice_download.php`
+  werden ausschließlich über die auth-geprüfte Route `/order/{orderNumber}/invoice`
   ausgeliefert).
 - **HTTPS erzwingen**: sobald Ihre konfigurierte Site-URL (**Admin →
   Einstellungen**) `https://` verwendet, wird jede reine HTTP-Anfrage mit
@@ -170,7 +182,7 @@ Definiert in [admin/includes/roles.php](admin/includes/roles.php):
 | **Manager** | Nur Produkte, Kategorien, Lager und Seiten/Menüs ("Artikel-/Inhaltsverwaltung") — kein Zugriff auf Bestellungen, Finanzen, Kunden, Einstellungen, Versand oder Admin-Konten |
 
 Admin-Konten verwalten unter **Admin → Admin-Konten** (nur Super Admin,
-[admin/admins.php](admin/admins.php)): zusätzliche Konten anlegen, Rolle
+Admin → Admin-Konten): zusätzliche Konten anlegen, Rolle
 zuweisen, deaktivieren/reaktivieren, Passwörter zurücksetzen oder löschen.
 Das System behält immer mindestens einen aktiven Super Admin - der letzte
 kann nicht gelöscht, herabgestuft oder deaktiviert werden.
@@ -201,19 +213,23 @@ Datei mit passendem Namen ablegt:
 
 | Datei | Überschreibt | Fällt zurück auf |
 |---|---|---|
-| `header.php` | Alles von `<html>` bis zum Beginn von `<main>` | `includes/header.php` |
-| `footer.php` | Alles vom Ende von `<main>` an | `includes/footer.php` |
-| `home.php` | Den Produktlisten-Inhalt auf `index.php` (Startseite, Kategorie- und Suche-innerhalb-einer-Kategorie-Ansichten) | `includes/home.php` |
+| `header.php` | Alles von `<html>` bis zum Beginn von `<main>` | `src/Views/storefront/theme/default/header.php` |
+| `footer.php` | Alles vom Ende von `<main>` an | `src/Views/storefront/theme/default/footer.php` |
+| `home.php` | Den Produktlisten-Inhalt (Startseite, Kategorie- und Suche-innerhalb-einer-Kategorie-Ansichten) | `src/Views/storefront/theme/default/home.php` |
 
 Ein Paket muss nur die Dateien bereitstellen, die es tatsächlich ändert -
 das eingebaute Paket **Default** liefert gar keine (Beweis, dass der
 Fallback transparent funktioniert), und **Sidebar Filters** überschreibt
 nur `home.php` sowie sein eigenes `style.css` (geladen nach
 `assets/css/style.css`, damit es Layout-CSS ergänzen oder weiter
-überschreiben kann, ohne das Kern-Stylesheet anzufassen). Der Resolver ist
-`themeTemplatePath()` in `includes/functions.php`; jede
-Shop-Root-Seite ruft ihn auf, statt `includes/header.php`/`footer.php`
-direkt einzubinden. Bewusst **nicht** enthalten ist ein
+überschreiben kann, ohne das Kern-Stylesheet anzufassen). Die *Vorlagen*
+eines Pakets liegen unter `src/Views/storefront/theme/<key>/` (vom
+direkten Web-Zugriff gesperrt), während *Manifest und statisches Asset*
+(`theme.json`, `style.css`) weiterhin in `themes/<key>/` liegen
+(Web-zugänglich) - siehe [CLAUDE.md](CLAUDE.md). Der Resolver ist
+`Core\ThemeManager::resolve()`, aufgerufen von `Core\Renderer::render()`/
+`renderSlot()`; jeder Shop-Controller rendert über eine der beiden Methoden,
+statt eine Header-Datei direkt einzubinden. Bewusst **nicht** enthalten ist ein
 Im-Browser-„Theme-.zip hochladen"-Ablauf - das würde jedem mit
 Admin-Zugriff erlauben, beliebigen PHP-Code auf dem Server hochzuladen und
 auszuführen; das später hinzuzufügen wäre eine eigene, sicherheitsgeprüfte
@@ -295,27 +311,28 @@ ohne Codeänderungen auf jeder Seite aufzunehmen:
   `product_option_translations` / `product_option_value_translations`
   (`applyProductTranslation()`/`applyOptionTranslations()` in
   `includes/functions.php` legen die Sprache des Besuchers bei der
-  Anzeige darüber). Shop-Suche und Namenssortierung auf
-  `index.php`/`search.php` durchsuchen/sortieren beim Browsen in einer
-  Nicht-Standardsprache ebenfalls den übersetzten Text.
+  Anzeige darüber). Shop-Suche und Namenssortierung
+  (`Controllers\Storefront\CatalogController`/`SearchController`)
+  durchsuchen/sortieren beim Browsen in einer Nicht-Standardsprache
+  ebenfalls den übersetzten Text.
   **Kategorienamen** sind das einzige verbliebene einsprachige
   Katalog-Element (nur der `intro_text` einer Kategorie ist pro Sprache) -
   sie genauso wie Produkte zu übersetzen wäre eine sinnvolle Erweiterung,
   falls benötigt. CMS-Seiten (Tabelle `pages`) sind wieder anders
   aufgebaut: eine komplette Zeile pro Sprache - siehe
-  [admin/pages.php](admin/pages.php).
+  Admin → Seiten.
 
 ## Menüs
 
 **Admin → Menüs** verwaltet zwei unabhängige, verschachtelbare Menüs:
-- **Hauptmenü** — als Navigationsleiste in `includes/header.php` gerendert, mit Dropdowns für jeden Eintrag mit Untereinträgen.
-- **Footer-Menü** — als Linkliste in `includes/footer.php` gerendert.
+- **Hauptmenü** — als Navigationsleiste im `header.php` des aktiven Theme-Pakets gerendert, mit Dropdowns für jeden Eintrag mit Untereinträgen.
+- **Footer-Menü** — als Linkliste im `footer.php` des aktiven Theme-Pakets gerendert.
 
 Jeder Eintrag ist eine **benutzerdefinierte URL**, eine **Kategorie**
-(verlinkt zu `index.php?category=`, inklusive der Produkte aus deren
-Unterkategorien) oder eine **Seite** (verlinkt zu `page.php?slug=`).
+(verlinkt zu `/category/{slug}`, inklusive der Produkte aus deren
+Unterkategorien) oder eine **Seite** (verlinkt zu `/page/{slug}`).
 Einträge per Drag am &#10021;-Griff neu anordnen (jQuery UI Sortable,
-gespeichert über `admin/menu_reorder.php`) — Ziehen ordnet nur innerhalb
+gespeichert über `POST /admin/menus/reorder`) — Ziehen ordnet nur innerhalb
 derselben Geschwisterebene neu, ein Eintrag kann dabei nie versehentlich
 unter ein anderes übergeordnetes Element verschoben werden.
 Verschachtelungstiefe ist unbegrenzt, genau wie bei Kategorien.
@@ -340,7 +357,7 @@ dabei aufgegeben wird:
 - wird mit `orders.is_test_order = 1` markiert und ist dadurch **aus jeder
   Finanzkennzahl ausgeschlossen**: den Umsatz-/Erstattungs-/
   Durchschnittsbestellwert-Summen sowie den Monats-/Zahlungsart-Aufschlüsselungen
-  in `admin/finance.php`, den Umsatz- und Bestellzahl-Kacheln des
+  im Finanz-Dashboard, den Umsatz- und Bestellzahl-Kacheln des
   Dashboards, und dem Transaktionsjournal (für Testbestellungen wird von
   vornherein keine Zeile in `transactions` angelegt).
 
@@ -353,8 +370,8 @@ verwenden) unter **Admin → Kunden → [Konto] → Testbenutzer löschen**.
 
 ## Paginierung
 
-Das Produktraster im Frontend (`index.php`, sowie die Produktergebnisse
-auf `search.php`) bietet **20 / 50 / 200 / Alle anzeigen** Artikel pro
+Das Produktraster im Frontend (Startseite/Kategorien, sowie die
+Produktergebnisse auf `/search`) bietet **20 / 50 / 200 / Alle anzeigen** Artikel pro
 Seite an. Sobald ein Besucher eine Wahl trifft, wird sie in
 `$_SESSION['per_page']` gespeichert und gilt für den Rest des Besuchs für
 jede Liste - keine Notwendigkeit, sie in der URL zu wiederholen. Bis eine
@@ -457,7 +474,7 @@ einen SMTP-basierten Versand austauschen, unter Nutzung der bereits in
 
 Jede E-Mail besteht aus `{{_header}}` + dem Textkörper einer Vorlage +
 `{{_footer}}`, alle pro Sprache editierbar unter **Admin →
-E-Mail-Vorlagen** ([admin/email_templates.php](admin/email_templates.php))
+E-Mail-Vorlagen** (Admin → E-Mail-Vorlagen)
 mit einer Referenz der `{{Platzhalter}}` beim Bearbeiten jeder Vorlage:
 
 | Vorlage | Wird gesendet, wenn |
@@ -466,7 +483,7 @@ mit einer Referenz der `{{Platzhalter}}` beim Bearbeiten jeder Vorlage:
 | `order_confirmation` | Eine Bestellung aufgegeben wird (Kasse) - enthält die automatisch erzeugte, nicht editierbare Artikeltabelle sowie die PDF-Rechnung als Anhang |
 | `order_status_update` | Admin → Bestellungen → ein Admin aktiviert „Kunden per E-Mail informieren" bei einer Statusänderung |
 | `registration_welcome` | Ein Kunde sich registriert |
-| `password_reset` | Anfrage „Passwort vergessen" ([forgot_password.php](forgot_password.php) / [reset_password.php](reset_password.php)) |
+| `password_reset` | Anfrage „Passwort vergessen" (`/forgot-password` / `/reset-password`) |
 | `account_deletion_warning` | Die DSGVO-Inaktivitätsbereinigung, 3 Monate bevor ein ruhendes Konto gelöscht wird - siehe [Datenschutz (DSGVO)](#datenschutz-dsgvo) |
 
 Eine Sprache ohne eigene Fassung eines Schlüssels fällt auf die englische
@@ -487,9 +504,9 @@ Sprache der Bestellung, und:
   Browser erreichbar - siehe [Sicherheit](#sicherheit)) und in der Tabelle
   `invoices` erfasst;
 - ist **herunterladbar** vom Kunden aus seiner Bestellhistorie
-  ([account.php](account.php)) und von jedem Admin aus
-  [admin/order_view.php](admin/order_view.php), beide über
-  [invoice_download.php](invoice_download.php), das prüft, ob der Anfragende
+  (`/account`) und von jedem Admin aus
+  Admin → Bestellungen, beide über
+  `/order/{orderNumber}/invoice`, das prüft, ob der Anfragende
   der Besitzer der Bestellung oder ein Admin ist, bevor die Datei
   ausgeliefert wird.
 
@@ -509,13 +526,13 @@ Composer-Paket wie `dompdf/dompdf` einsetzen.
 - **Export**: jeder Kunde kann alles, was shopRex über ihn gespeichert hat
   (Profil, Adressen, vollständige Bestellhistorie), als JSON unter **Mein
   Konto → Meine Daten exportieren** herunterladen
-  ([account_export.php](account_export.php)); ein Admin kann dasselbe für
+  (`/account/export`); ein Admin kann dasselbe für
   jeden Kunden unter **Admin → Kunden → [Kunde] → Daten exportieren**
-  ([admin/customer_export.php](admin/customer_export.php)) tun. Beide
+  (Admin → Kunden → Daten exportieren) tun. Beide
   rufen dieselbe Funktion `GdprTools::exportData()` auf.
 - **Löschung ("Recht auf Vergessenwerden")**: Kunden können ihr eigenes
   Konto löschen (erneute Passworteingabe erforderlich,
-  [account_delete.php](account_delete.php)); Admins können das jedes
+  `/account/delete`); Admins können das jedes
   Kunden unter **Admin → Kunden → [Kunde] → Konto löschen (DSGVO)** tun.
   Beide rufen `GdprTools::deleteCustomer()` auf, das die Zeile in
   `customers` unwiderruflich löscht (und deren Adressen kaskadierend
@@ -552,57 +569,67 @@ Alle werden von öffentlichen CDNs geladen (jsdelivr / code.jquery.com) -
 kein Composer-/npm-Build-Schritt nötig. Um sie stattdessen selbst zu
 hosten (z. B. für eine Offline-/abgeschottete Bereitstellung oder eine
 strengere CSP), jede einzeln nach `assets/vendor/` herunterladen und die
-`<link>`-/`<script>`-Tags in `includes/header.php`, `includes/footer.php`,
-`admin/pages.php`, `admin/menus.php`, `admin/product_images.php` und
-`admin/image_crop.php` anpassen.
+`<link>`-/`<script>`-Tags in den betreffenden `src/Views/`-Dateien
+(Theme-Header/-Footer, Admin → Seiten/Menüs/Produktbilder/Bildzuschnitt)
+anpassen.
 
 | Bibliothek | Verwendet für | Wo |
 |---|---|---|
-| Bootstrap 5.3 | Layout/Komponenten im Shop | `includes/header.php`, `includes/footer.php` |
-| Bootstrap Icons 1.11 | Icons (Warenkorb, Suche, Zahlungsarten, ...) | `includes/header.php` |
-| jQuery 3.7 | Kleine Interaktionen im Shop; von jQuery UI benötigt | `includes/footer.php`, `assets/js/main.js` |
-| jQuery UI 1.13 (Sortable) | Drag-&-Drop-Neuordnung von Menüs und Produktbildern | `admin/menus.php`, `admin/product_images.php` |
-| Quill.js 2.0 | Rich-Text-Editor für CMS-Seiten | `admin/pages.php` |
-| Cropper.js 1.6 | Interaktiver Bildzuschnitt | `admin/image_crop.php` |
+| Bootstrap 5.3 | Layout/Komponenten im Shop | Theme-Header-/Footer-Views |
+| Bootstrap Icons 1.11 | Icons (Warenkorb, Suche, Zahlungsarten, ...) | Theme-Header-View |
+| jQuery 3.7 | Kleine Interaktionen im Shop; von jQuery UI benötigt | Theme-Footer-View, `assets/js/main.js` |
+| jQuery UI 1.13 (Sortable) | Drag-&-Drop-Neuordnung von Menüs und Produktbildern | Admin → Menüs, Admin → Produkte → Bilder |
+| Quill.js 2.0 | Rich-Text-Editor für CMS-Seiten | Admin → Seiten |
+| Cropper.js 1.6 | Interaktiver Bildzuschnitt | Admin → Bildzuschnitt |
 
 ## Projektstruktur
 
+Router-basiert, nicht eine physische Datei pro Seite - die vollständige
+Aufschlüsselung (Namespaces, Klassenverantwortlichkeiten, die wenigen
+bewusst unverändert übernommenen Legacy-Klassen) steht im Abschnitt
+"Architecture" von [CLAUDE.md](CLAUDE.md).
+
 ```
-install.php           Ersteinrichtungsassistent (siehe Installation oben)
+install.php           Ersteinrichtungsassistent (siehe Installation oben) - läuft eigenständig, außerhalb von src/
 config/                DB- und Site-Konfiguration; installed.php wird generiert, nicht eingecheckt
-includes/              Gemeinsames PHP: bootstrap, Cart, Mailer, PaymentGateway, ImageProcessor (GD-
-                       Zuschnitt), SimplePdf + InvoiceGenerator, GdprTools + GdprCleanup, i18n
-                       (__()/Sprachdateien), Kategorie-/Menübaum- + Theme-Hilfsfunktionen
+includes/              Gemeinsames PHP, weiterhin genutzt von install.php und einer Handvoll
+                       unverändert übernommener Legacy-Klassen (siehe unten): eine ausgedünnte
+                       functions.php, Cart, Mailer, PaymentGateway, ImageProcessor (GD-Zuschnitt),
+                       SimplePdf + InvoiceGenerator, GdprTools + GdprCleanup, i18n (__()/Sprachdateien)
 includes/lang/en.php, de.php, fr.php   Übersetzungsstrings (Sprache hinzufügen: neue xx.php hier ablegen)
+src/                   Die objektorientierte Anwendung - per src/.htaccess vom direkten Web-
+                       Zugriff gesperrt; nur über index.php / admin/index.php erreichbar
+src/bootstrap.php       Autoloader + config/database-Includes + Container-Aufbau
+src/container.php       Baut den DI-Container auf, bindet jede Core-/Service-/Payment-Klasse
+src/view-helpers.php    Globale Hilfsfunktionen (e()/__()/formatPrice()/...), die jede View nutzt
+src/routes/web.php, admin.php   Routentabellen - eine Seite hinzufügen ist eine Zeile
+src/Core/               Router, Route, Request, Response, Renderer, ThemeManager, Container,
+                       Model, Controller/AdminController, Csrf, FlashBag, Session, Auth/*
+src/Models/             Product, Category, Cart, Order, Customer, ShippingMethod, TaxRate,
+                       MenuItem, Page, CustomerRequest (abstrakt) + WithdrawalRequest/RmaTicket,
+                       ContactMessage, LegalDocument, ...
+src/Services/           CategoryTreeService, MenuTreeService, TaxCalculator, DiscountCalculator,
+                       ShippingCalculator, TranslationOverlay, CheckoutService, InvoiceService,
+                       Mailer, GdprService, RateLimiter, SettingsRepository, I18n, ...
+src/Payment/            PaymentGateway-/CapturableGateway-Interfaces + PayPal-/CreditCard-/
+                       BankTransfer-/Invoice-/Test-Implementierungen
+src/Controllers/Storefront/, src/Controllers/Admin/   Eine Controller-Klasse je Seite/Bereich
+src/Views/storefront/, src/Views/admin/               Eine View-Datei je Seite
+src/Views/storefront/theme/<key>/   Theme-Paket-Vorlagen (siehe Frontend-Theme oben)
+src/Support/            Präsentations-Hilfsklassen (Pagination, Menübaum-Renderer, ...)
 assets/                Shop-CSS/JS/Bilder
-themes/                Installierbare Layout-Pakete (siehe Frontend-Theme oben) - themes/default/,
-                       themes/sidebar/ und alle, die Sie hinzufügen; jedes ist nur eine theme.json
-                       plus optionale Overrides von header.php/footer.php/home.php/style.css
+admin/assets/           Admin-CSS/JS
+admin/cron/gdpr_cleanup.php  Nur-CLI-Einstiegspunkt für die Inaktivitätsbereinigung (siehe Datenschutz)
+themes/                 Installierbare Layout-Pakete (siehe Frontend-Theme oben) - themes/default/,
+                       themes/sidebar/ und alle, die Sie hinzufügen; jedes ist eine theme.json +
+                       style.css (die PHP-Vorlagen selbst liegen unter src/Views/storefront/theme/<key>/)
 uploads/products/      Hochgeladene Produktbilder (Originale + erzeugte zugeschnittene Derivate)
 uploads/invoices/      Erzeugte Rechnungs-PDFs (nie über den Browser erreichbar, siehe Sicherheit)
+uploads/legal_documents/   Hochgeladene/generierte Rechtsdokument-PDFs
+uploads/rma/            Fotoanhänge zu RMA-Tickets
 sql/schema.sql         Datenbankstruktur + Standardwerte für Einstellungen/Seiten/Menü/Steuersätze/
                        E-Mail-Vorlagen/eine Standard-Versandmethode
 sql/seed_demo.sql      Optionale Demo-Kategorien/-Produkte/-Menülinks (Checkbox im Installer)
-index.php, product.php, cart.php, checkout.php, page.php, search.php, ...   Shop-Seiten
-forgot_password.php, reset_password.php   Passwort-Wiederherstellung
-account_export.php, account_delete.php    Selbstbedienungs-DSGVO-Export/-Löschung für Kunden
-invoice_download.php   Auth-geprüfte Auslieferung der Rechnungs-PDFs (Besitzer der Bestellung oder Admin)
-admin/                 Backend (eigener Header/Footer/Auth/Rollen/CSS)
-admin/includes/roles.php    Rolle-zu-Berechtigung-Zuordnung (siehe Admin-Rollen oben)
-admin/admins.php            Admin-Kontenverwaltung (nur Super Admin)
-admin/categories.php        Kategoriebaum-Verwaltung (unbegrenzte Verschachtelung)
-admin/pages.php              CMS-Seitenverwaltung (Quill.js-Editor, pro Sprache)
-admin/menus.php              Verwaltung von Haupt-/Footer-Menü (jQuery UI Sortable)
-admin/menu_reorder.php       AJAX-Endpunkt für die Drag-&-Drop-Neuordnung der Menüs
-admin/product_images.php     Bildmanager je Produkt (Upload, Beschriftung, Neuordnung, Hauptbild)
-admin/product_image_reorder.php   AJAX-Endpunkt für die Drag-&-Drop-Neuordnung der Bilder
-admin/image_crop.php         Cropper.js-Zuschnitt-UI + löst ImageProcessor (GD) aus
-admin/tax_rates.php          MwSt.-Satz-Verwaltung
-admin/shipping.php           Gewichtsstaffel-Versandmethoden + Regeln für Gratisversand
-admin/email_templates.php    Editierbarer E-Mail-Header/-Footer/-Text, pro Sprache
-admin/customer_export.php    Admin-ausgelöster DSGVO-Datenexport
-admin/cron/gdpr_cleanup.php  Nur-CLI-Einstiegspunkt für die Inaktivitätsbereinigung (siehe Datenschutz)
-admin/settings.php           Shop-/Zahlungs-/Bankdaten, Layout-/Theme-/Sprach-/MwSt.-/Aufbewahrungseinstellungen
 ```
 
 ## Hinweise / bekannte Vereinfachungen
@@ -614,7 +641,7 @@ admin/settings.php           Shop-/Zahlungs-/Bankdaten, Layout-/Theme-/Sprach-/M
   Admin-Bereichs, und `install.php` absichern (es sperrt sich selbst,
   sobald ein Admin existiert, aber erwägen Sie, es nach der Einrichtung
   ganz zu entfernen).
-- CMS-Seiteninhalte (`page.php`) und deren Darstellung im Shop gelten als
+- CMS-Seiteninhalte (`Controllers\Storefront\PageController`) und deren Darstellung im Shop gelten als
   **vertrauenswürdiges HTML**, unescaped — dasselbe Modell wie bei den
   meisten CMS (WordPress-Beitrags-/Seiteninhalte usw.). Wer Seiten
   bearbeiten kann (Super Admin oder Manager), kann beliebiges
@@ -632,12 +659,14 @@ admin/settings.php           Shop-/Zahlungs-/Bankdaten, Layout-/Theme-/Sprach-/M
   Testkonto angemeldet** ist - es gibt kein „Test-Gastbestellung"-Konzept
   (ein Konto ist das, was Admin → Kunden anlegt, und `is_test_account`
   lebt auf dieser Zeile).
-- Die Formel für den rabattierten Preis ist bewusst zweimal vorhanden:
-  einmal in SQL (`index.php`/`search.php`, für Sortierung/Filterung) und
-  einmal in PHP (`getActiveDiscount()` in `includes/functions.php`, für
-  die Anzeige und den maßgeblichen Preis beim Hinzufügen zum
-  Warenkorb/an der Kasse) - bei Änderungen an der Rabattlogik müssen
-  beide aktualisiert werden.
+- Die Formel für den rabattierten Preis ist bewusst dreimal vorhanden:
+  einmal in SQL (`Controllers\Storefront\CatalogController`/
+  `SearchController`, für Sortierung/Filterung), einmal in PHP
+  (`Services\DiscountCalculator`, für die Anzeige) und einmal in
+  `getActiveDiscount()` in `includes/functions.php` (der maßgebliche
+  Preis, den `Cart.php` beim Hinzufügen zum Warenkorb/an der Kasse nutzt)
+  - bei Änderungen an der Rabattlogik müssen alle drei aktualisiert
+  werden.
 - **Sprachabdeckung**: die UI-Umgebung im Shop/Backend und alle E-Mails
   sind vollständig ins Englische/Deutsche/Französische übersetzt,
   CMS-Seiten unterstützen eine Zeile pro Sprache, und

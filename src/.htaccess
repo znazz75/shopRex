@@ -1,0 +1,13 @@
+# Never directly web-accessible - everything here is meant to be reached
+# only through index.php/admin/index.php's front-controller + Router
+# dispatch (see src/bootstrap.php), the same way config/, includes/, and
+# sql/ are already blocked. A direct request to a class or view file here
+# bypasses routing/capability checks entirely and, with display_errors on,
+# can leak a full filesystem path via an uncaught error.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

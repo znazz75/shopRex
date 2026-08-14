@@ -57,6 +57,12 @@ sidebar footer). When a change lands on `main`:
    [Releases](../../releases) page; consider also filling in a GitHub
    Release with notes for anything more than a trivial bump.
 
+**Sanctioned exception:** v2.00 (the OOP architecture rewrite) does not
+follow the `+0.01` rule - a declared architecture milestone jumped the
+version directly from `1.01` to `2.00` instead. This is a one-time
+exception, not a change to the convention: everything from `2.01` onward
+goes back to bumping by exactly `0.01` as described above.
+
 ## Reporting security issues
 
 Please don't open a public issue for a security vulnerability. Email the

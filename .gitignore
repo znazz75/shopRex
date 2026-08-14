@@ -3,6 +3,10 @@ uploads/products/*
 uploads/invoices/*
 !uploads/invoices/.gitkeep
 !uploads/invoices/.htaccess
+uploads/legal_documents/*
+!uploads/legal_documents/.gitkeep
+uploads/rma/*
+!uploads/rma/.gitkeep
 config/config.local.php
 config/installed.php
 *.log

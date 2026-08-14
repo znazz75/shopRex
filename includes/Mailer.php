@@ -220,14 +220,14 @@ class Mailer
 
         $rendered = self::render('registration_welcome', $customer['language'] ?? 'en', [
             'customer_name' => $customer['first_name'],
-            'account_url'   => rtrim(SITE_URL, '/') . '/account.php',
+            'account_url'   => rtrim(SITE_URL, '/') . '/account',
         ]);
         return self::send($customer['email'], $rendered['subject'], $rendered['html'], 'registration_welcome');
     }
 
     public static function sendPasswordReset(array $customer, string $token): bool
     {
-        $resetLink = rtrim(SITE_URL, '/') . '/reset_password.php?token=' . urlencode($token);
+        $resetLink = rtrim(SITE_URL, '/') . '/reset-password?token=' . urlencode($token);
         $rendered = self::render('password_reset', $customer['language'] ?? 'en', [
             'customer_name' => $customer['first_name'],
             'reset_link'    => $resetLink,
@@ -240,7 +240,7 @@ class Mailer
         $rendered = self::render('account_deletion_warning', $customer['language'] ?? 'en', [
             'customer_name' => $customer['first_name'],
             'deletion_date' => $deletionDate,
-            'login_url'     => rtrim(SITE_URL, '/') . '/login.php',
+            'login_url'     => rtrim(SITE_URL, '/') . '/login',
         ]);
         return self::send($customer['email'], $rendered['subject'], $rendered['html'], 'account_deletion_warning');
     }
