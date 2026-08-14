@@ -68,7 +68,7 @@ feature list below.
    php -S localhost:8000
    ```
    For real hosting, point your web server's document root at this folder
-   **or at a subdirectory of it** (e.g. `http://example.com/shopRex/`) - both
+   **or at a subdirectory of it** (e.g. `https://example.com/shopRex/`) - both
    work with no code changes, see [Running in a subdirectory](#running-in-a-subdirectory).
    Make sure `config/`, `includes/`, and `sql/` are **not** web-accessible
    (or add a `.htaccess`/nginx rule blocking them) — everything the browser
@@ -106,7 +106,7 @@ installer, editable later from **Admin → Settings → Site URL**), the
 - an automatic guess (`detectSiteUrl()` in `config/config.php`) that
 compares this project's real filesystem path against the web server's
 document root, so it correctly includes a subdirectory like
-`http://localhost/shopRex` without any configuration. If that guess is ever
+`https://localhost/shopRex` without any configuration. If that guess is ever
 wrong (unusual server setups, some reverse proxies), just correct it in the
 installer or in **Admin → Settings** - nothing else needs to change.
 Using `https://` as the Site URL's scheme also makes every plain-HTTP

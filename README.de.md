@@ -71,7 +71,7 @@ erzeugt eine echte PDF-Rechnung — siehe die Funktionsliste unten.
    php -S localhost:8000
    ```
    Für echtes Hosting das Document Root des Webservers auf diesen Ordner
-   **oder ein Unterverzeichnis davon** zeigen lassen (z. B. `http://example.com/shopRex/`)
+   **oder ein Unterverzeichnis davon** zeigen lassen (z. B. `https://example.com/shopRex/`)
    - beides funktioniert ohne Codeänderungen, siehe [Betrieb in einem Unterverzeichnis](#betrieb-in-einem-unterverzeichnis).
    Stellen Sie sicher, dass `config/`, `includes/` und `sql/` **nicht** über
    den Browser erreichbar sind (oder fügen Sie eine `.htaccess`-/nginx-Regel
@@ -113,7 +113,7 @@ Site-URL**), der Umgebungsvariable `SHOPREX_SITE_URL`, oder - bevor eines
 von beidem existiert - einer automatischen Schätzung (`detectSiteUrl()`
 in `config/config.php`), die den tatsächlichen Dateisystempfad des
 Projekts mit dem Document Root des Webservers vergleicht, sodass ein
-Unterverzeichnis wie `http://localhost/shopRex` korrekt ohne jede
+Unterverzeichnis wie `https://localhost/shopRex` korrekt ohne jede
 Konfiguration erkannt wird. Falls diese Schätzung einmal falsch liegt
 (ungewöhnliche Serverkonfigurationen, manche Reverse-Proxys), korrigieren
 Sie sie einfach im Installer oder unter **Admin → Einstellungen** - sonst
