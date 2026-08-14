@@ -36,13 +36,57 @@ function getAvailableLanguages(): array
 }
 
 /**
+ * Subset of getAvailableLanguages() actually offered anywhere a language
+ * can be picked or switched to - the storefront/admin header picker,
+ * `?lang=` (getCurrentLanguage() below), Admin -> Settings -> Default
+ * language, and the per-language tabs in Admin -> Pages / Email Templates
+ * / Categories / Products -> edit. Admin -> Settings -> Languages lets an
+ * admin narrow this down (e.g. to a single language, at which point every
+ * language-switcher UI disappears entirely - see the `count(...) > 1`
+ * checks wherever one is rendered) without deleting the underlying
+ * includes/lang/xx.php file, which stays usable for formatting/loading
+ * strings for anything that already captured that language (an existing
+ * order/customer's stored `language` column, e.g.) even while disabled.
+ *
+ * Defaults to every available language (today's behavior) until an admin
+ * actually saves a narrower selection via the `enabled_languages` setting
+ * (a comma-separated list of codes). Always returns at least one language
+ * - the configured default language if it's still available, else
+ * whatever comes first - so the site is never left with zero usable
+ * languages (e.g. if a previously-enabled language's file is later
+ * deleted from disk).
+ */
+function getEnabledLanguages(): array
+{
+    $available = getAvailableLanguages();
+    $raw = getSetting('enabled_languages');
+    if ($raw === null || trim($raw) === '') {
+        return $available;
+    }
+
+    $codes = array_filter(array_map('trim', explode(',', $raw)));
+    $enabled = array_intersect_key($available, array_flip($codes));
+    if ($enabled) {
+        return $enabled;
+    }
+
+    $defaultLang = getSetting('default_language', 'en');
+    if (isset($available[$defaultLang])) {
+        return [$defaultLang => $available[$defaultLang]];
+    }
+    return $available ?: ['en' => 'English'];
+}
+
+/**
  * Current visitor's language: a ?lang= override (persisted to the session,
  * same pattern as getPerPage()), else whatever was already chosen this
- * session, else the admin-configured default (Admin -> Settings).
+ * session, else the admin-configured default (Admin -> Settings). Only
+ * ever resolves to an enabled language (see getEnabledLanguages()) - a
+ * disabled one isn't reachable via ?lang= even if its file still exists.
  */
 function getCurrentLanguage(): string
 {
-    $available = array_keys(getAvailableLanguages());
+    $available = array_keys(getEnabledLanguages());
 
     if (isset($_GET['lang']) && in_array($_GET['lang'], $available, true)) {
         $_SESSION['language'] = $_GET['lang'];

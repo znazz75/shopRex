@@ -18,7 +18,7 @@ $navItems = [
 ];
 $currentPage = basename($_SERVER['SCRIPT_NAME']);
 $currentLang = getCurrentLanguage();
-$availableLangs = getAvailableLanguages();
+$availableLangs = getEnabledLanguages();
 ?>
 <!doctype html>
 <html lang="<?= e($currentLang) ?>">

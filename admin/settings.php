@@ -94,8 +94,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['run_gdpr_cleanup']) 
     $perPage = in_array($_POST['items_per_page_default'] ?? '', PER_PAGE_OPTIONS, true) ? $_POST['items_per_page_default'] : '20';
     $stmt->execute([$perPage, 'items_per_page_default']);
 
-    $lang = array_key_exists($_POST['default_language'] ?? '', getAvailableLanguages()) ? $_POST['default_language'] : 'en';
+    // Languages: which of the discovered includes/lang/*.php files are
+    // actually offered anywhere a language can be picked (storefront/admin
+    // switcher, ?lang=, and the per-language tabs in Admin -> Pages/Email
+    // Templates/Categories/Products -> edit) - see getEnabledLanguages()
+    // in includes/i18n.php. Computed from the submitted checkboxes
+    // directly rather than re-reading it back via getSetting() (which
+    // caches for the rest of this request and would still return the OLD
+    // value here, since it's saved a few lines below) - this is what lets
+    // default_language and enabled_languages be changed in the same save
+    // and stay consistent with each other.
+    $allAvailableLangs = getAvailableLanguages();
+    $submittedLangs = array_values(array_intersect(array_keys($allAvailableLangs), $_POST['enabled_languages'] ?? []));
+    if (!$submittedLangs) {
+        // Nothing checked - don't lock the site out of every language.
+        $submittedLangs = array_keys($allAvailableLangs);
+    }
+    $lang = in_array($_POST['default_language'] ?? '', $submittedLangs, true) ? $_POST['default_language'] : $submittedLangs[0];
     $stmt->execute([$lang, 'default_language']);
+    $upsertStmt->execute(['enabled_languages', implode(',', $submittedLangs)]);
 
     $vatEnabled = !empty($_POST['vat_enabled']) ? '1' : '0';
     $stmt->execute([$vatEnabled, 'vat_enabled']);
@@ -139,7 +156,7 @@ require __DIR__ . '/includes/header.php';
   </form>
 </div>
 
-<form method="post">
+<form method="post" id="settingsForm">
   <?= csrfField() ?>
 
   <div class="card">
@@ -176,18 +193,42 @@ require __DIR__ . '/includes/header.php';
     </div>
   </div>
 
+  <?php $allAvailableLangsForForm = getAvailableLanguages(); $enabledLangsForForm = getEnabledLanguages(); ?>
   <div class="card">
     <h2 style="margin-top:0;"><?= e(__('nav.language')) ?></h2>
     <p style="color:var(--color-muted);font-size:13px;">
       <?= e(__('admin.settings.language_hint')) ?>
     </p>
+
+    <div class="form-group">
+      <label><?= e(__('admin.settings.enabled_languages')) ?></label>
+      <?php foreach ($allAvailableLangsForForm as $code => $label): ?>
+        <label style="font-weight:normal;display:block;margin:4px 0;">
+          <input type="checkbox" name="enabled_languages[]" value="<?= e($code) ?>" style="width:auto;" <?= isset($enabledLangsForForm[$code]) ? 'checked' : '' ?>>
+          <?= e($label) ?> (<?= e($code) ?>)
+        </label>
+      <?php endforeach; ?>
+      <small style="color:var(--color-muted);"><?= e(__('admin.settings.enabled_languages_hint')) ?></small>
+    </div>
+
     <div class="form-group" style="max-width:280px;">
       <label for="default_language"><?= e(__('admin.settings.default_language')) ?></label>
       <select id="default_language" name="default_language">
-        <?php foreach (getAvailableLanguages() as $code => $label): ?>
-          <option value="<?= e($code) ?>" <?= ($current['default_language'] ?? 'en') === $code ? 'selected' : '' ?>><?= e($label) ?> (<?= e($code) ?>)</option>
+        <?php foreach ($allAvailableLangsForForm as $code => $label): ?>
+          <?php /* Lists every available language, not just currently-enabled ones - so
+                   checking a new language's box and picking it as the default both save
+                   in one go. Picking one that isn't (also) checked above falls back to
+                   the first enabled language instead, same silent-clamp style already
+                   used for site_theme/items_per_page_default elsewhere in this file. */ ?>
+          <option value="<?= e($code) ?>" <?= ($current['default_language'] ?? 'en') === $code ? 'selected' : '' ?>><?= e($label) ?> (<?= e($code) ?>)<?= isset($enabledLangsForForm[$code]) ? '' : ' ' . e(__('admin.settings.default_language_disabled_suffix')) ?></option>
         <?php endforeach; ?>
       </select>
+      <small style="color:var(--color-muted);"><?= e(__('admin.settings.default_language_hint')) ?></small>
+    </div>
+
+    <div class="flash flash-info" style="margin-bottom:0;">
+      <strong><?= e(__('admin.settings.add_language_heading')) ?></strong><br>
+      <?= e(__('admin.settings.add_language_hint')) ?>
     </div>
   </div>
 
@@ -286,6 +327,19 @@ require __DIR__ . '/includes/header.php';
 
   <button class="btn" type="submit"><?= e(__('admin.settings.save_settings')) ?></button>
 </form>
+
+<script>
+  // Mirrors the server-side fallback in admin/settings.php (unchecking
+  // every language re-enables all of them rather than locking the site
+  // out) - this just tells the admin about it before the round-trip,
+  // instead of silently overriding what they submitted.
+  document.getElementById('settingsForm').addEventListener('submit', function (e) {
+    var checked = document.querySelectorAll('input[name="enabled_languages[]"]:checked');
+    if (checked.length === 0 && !confirm(<?= json_encode(__('admin.settings.enabled_languages_confirm_empty')) ?>)) {
+      e.preventDefault();
+    }
+  });
+</script>
 
 <form method="post" style="margin-top:16px;" data-confirm="<?= e(__('admin.settings.confirm_run_cleanup')) ?>">
   <?= csrfField() ?>

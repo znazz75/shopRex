@@ -3,7 +3,7 @@ require_once __DIR__ . '/includes/bootstrap.php';
 requireAdminPermission('categories');
 
 $errors = [];
-$availableLangs = getAvailableLanguages();
+$availableLangs = getEnabledLanguages();
 $lang = $_GET['lang'] ?? getSetting('default_language', 'en');
 if (!array_key_exists($lang, $availableLangs)) {
     $lang = 'en';

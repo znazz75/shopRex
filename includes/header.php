@@ -8,7 +8,7 @@ $theme = getActiveTheme();
 $shopName = getSetting('shop_name', SITE_NAME);
 $searchQuery = $_GET['q'] ?? '';
 $currentLang = getCurrentLanguage();
-$availableLangs = getAvailableLanguages();
+$availableLangs = getEnabledLanguages();
 
 /**
  * Recursively render the main menu as Bootstrap nav links / dropdowns so

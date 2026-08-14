@@ -225,12 +225,26 @@ every page:
 - **Add a language** by dropping a new `includes/lang/xx.php` file with the
   same keys (a `_meta_name` entry sets its display name, e.g. `'Français'`)
   - it's auto-detected everywhere a language picker appears, no other
-    changes needed.
+    changes needed. **Admin → Settings → Languages** shows this same
+    how-to directly in the back office too.
+- **Enable/disable individual languages** from **Admin → Settings →
+  Languages** without deleting the underlying file - a language stays
+  discovered (still usable for, e.g., formatting an existing order/customer
+  that captured it before being disabled) but disappears from every
+  switcher, `?lang=`, and the per-language tabs in Pages/Email
+  Templates/Categories/Products the moment it's unchecked
+  (`getEnabledLanguages()` in `includes/i18n.php`, vs.
+  `getAvailableLanguages()` for "every file that exists"). **Enabling just
+  one language removes language-switching UI entirely** - the picker only
+  ever renders when more than one is enabled. At least one language always
+  stays enabled; saving with none checked re-enables all of them rather
+  than locking the site out.
 - Visitors and admins can **switch language at any time** via the picker in
   the navbar (storefront) or sidebar (admin) - `?lang=xx` persists to
   `$_SESSION['language']` for the rest of the visit (`getCurrentLanguage()`/
   `languageSwitchUrl()`). Until they pick one, **Admin → Settings → Language**
-  sets the default (`default_language`).
+  sets the default (`default_language`), which must itself be an enabled
+  language.
 - Dates are formatted per-language too (`formatLocalDate()`: `Aug 25, 2026`
   vs. `25.08.2026`).
 - **Scope note**: this covers the UI chrome (navigation, labels, buttons,

@@ -67,7 +67,7 @@ $errors = [];
 // save handler below. See includes/functions.php for the helpers and
 // sql/schema.sql for why the base products/product_options/
 // product_option_values rows never hold anything but the default language.
-$availableLangs = getAvailableLanguages();
+$availableLangs = getEnabledLanguages();
 $defaultLang = getSetting('default_language', 'en');
 $otherLanguages = array_diff(array_keys($availableLangs), [$defaultLang]);
 $productTranslations = $id ? getProductTranslationsByLanguage($id) : [];

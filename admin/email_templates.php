@@ -20,7 +20,7 @@ function getEmailTemplateKeysMeta(): array
 }
 
 $lang = $_GET['lang'] ?? getSetting('default_language', 'en');
-$availableLangs = getAvailableLanguages();
+$availableLangs = getEnabledLanguages();
 if (!array_key_exists($lang, $availableLangs)) {
     $lang = 'en';
 }
@@ -76,11 +76,13 @@ require __DIR__ . '/includes/header.php';
 <div class="page-header"><h1><?= e(__('admin.email_templates')) ?></h1></div>
 <?php foreach ($errors as $error): ?><div class="flash flash-error"><?= e($error) ?></div><?php endforeach; ?>
 
+<?php if (count($availableLangs) > 1): ?>
 <div class="toolbar">
   <?php foreach ($availableLangs as $code => $label): ?>
     <a class="btn <?= $code === $lang ? '' : 'btn-secondary' ?>" href="email_templates.php?lang=<?= e($code) ?>"><?= e($label) ?></a>
   <?php endforeach; ?>
 </div>
+<?php endif; ?>
 
 <?php if ($editKey && $current): ?>
   <div class="card">

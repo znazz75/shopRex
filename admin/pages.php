@@ -3,7 +3,7 @@ require_once __DIR__ . '/includes/bootstrap.php';
 requireAdminPermission('pages');
 
 $errors = [];
-$availableLangs = getAvailableLanguages();
+$availableLangs = getEnabledLanguages();
 $lang = $_GET['lang'] ?? getSetting('default_language', 'en');
 if (!array_key_exists($lang, $availableLangs)) {
     $lang = 'en';
@@ -124,11 +124,13 @@ require __DIR__ . '/includes/header.php';
 <div class="page-header"><h1><?= e(__('admin.pages')) ?></h1></div>
 <?php foreach ($errors as $error): ?><div class="flash flash-error"><?= e($error) ?></div><?php endforeach; ?>
 
+<?php if (count($availableLangs) > 1): ?>
 <div class="toolbar">
   <?php foreach ($availableLangs as $code => $label): ?>
     <a class="btn <?= $code === $lang ? '' : 'btn-secondary' ?>" href="pages.php?lang=<?= e($code) ?>"><?= e($label) ?></a>
   <?php endforeach; ?>
 </div>
+<?php endif; ?>
 
 <?php if (!empty($missingTranslations)): ?>
   <div class="flash flash-info">

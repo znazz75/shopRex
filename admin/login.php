@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = __('auth.invalid_credentials');
     }
 }
-$availableLangs = getAvailableLanguages();
+$availableLangs = getEnabledLanguages();
 ?>
 <!doctype html>
 <html lang="<?= e(getCurrentLanguage()) ?>">
