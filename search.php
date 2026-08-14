@@ -18,11 +18,30 @@ if ($query !== '') {
     $catStmt->execute([$like, $like]);
     $categories = $catStmt->fetchAll();
 
-    $prodWhere = "p.status = 'active' AND " . availabilityWindowSql() . " AND (p.name LIKE ? OR p.short_description LIKE ? OR p.description LIKE ? OR p.sku LIKE ?)";
-    $prodParams = [$like, $like, $like, $like];
+    // Search a translated name/short_description/description too (Admin ->
+    // Products -> edit) when browsing in a non-default language - not just
+    // the base/default-language columns - same reasoning as index.php's
+    // product listing search.
+    $currentLang = getCurrentLanguage();
+    $defaultLang = getSetting('default_language', 'en');
+    $translateJoin = $currentLang !== $defaultLang ? 'LEFT JOIN product_translations pt ON pt.product_id = p.id AND pt.language = ?' : '';
+    $joinParams = $translateJoin ? [$currentLang] : [];
+    $nameSortSql = $translateJoin ? 'COALESCE(pt.name, p.name)' : 'p.name';
 
-    $countStmt = db()->prepare("SELECT COUNT(*) FROM products p WHERE $prodWhere");
-    $countStmt->execute($prodParams);
+    $prodWhere = "p.status = 'active' AND " . availabilityWindowSql() . " AND (p.name LIKE ? OR p.short_description LIKE ? OR p.description LIKE ? OR p.sku LIKE ?"
+        . ($translateJoin ? ' OR pt.name LIKE ? OR pt.short_description LIKE ? OR pt.description LIKE ?' : '') . ')';
+    $prodParams = [$like, $like, $like, $like];
+    if ($translateJoin) {
+        $prodParams[] = $like;
+        $prodParams[] = $like;
+        $prodParams[] = $like;
+    }
+    // $joinParams (the JOIN's own ON ? for language) always comes first -
+    // it's textually before WHERE in every query below.
+    $allProdParams = array_merge($joinParams, $prodParams);
+
+    $countStmt = db()->prepare("SELECT COUNT(*) FROM products p $translateJoin WHERE $prodWhere");
+    $countStmt->execute($allProdParams);
     $totalProducts = (int)$countStmt->fetchColumn();
     $totalPages = $perPageInt ? max(1, (int)ceil($totalProducts / $perPageInt)) : 1;
     $page = min($page, $totalPages);
@@ -32,15 +51,20 @@ if ($query !== '') {
                 (SELECT cropped_path FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, sort_order ASC LIMIT 1) AS primary_cropped_image,
                 (SELECT rate FROM tax_rates WHERE id = p.tax_rate_id) AS tax_rate_percent
          FROM products p
+         $translateJoin
          WHERE $prodWhere
-         ORDER BY p.name";
+         ORDER BY $nameSortSql";
     if ($perPageInt) {
         $offset = ($page - 1) * $perPageInt;
         $prodSql .= " LIMIT $perPageInt OFFSET $offset";
     }
     $prodStmt = db()->prepare($prodSql);
-    $prodStmt->execute($prodParams);
+    $prodStmt->execute($allProdParams);
     $products = $prodStmt->fetchAll();
+    foreach ($products as &$product) {
+        $product = applyProductTranslation($product, $currentLang);
+    }
+    unset($product);
 }
 
 $pageTitle = __('search.title');

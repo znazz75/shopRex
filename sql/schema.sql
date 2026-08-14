@@ -102,6 +102,25 @@ CREATE TABLE products (
     INDEX idx_products_price (price)
 ) ENGINE=InnoDB;
 
+-- Per-language overrides for name/short_description/description - only
+-- ever holds languages OTHER than the site's default language; the
+-- default-language content lives on the products row itself (same
+-- "base table = default language, translation table = everything else"
+-- split used for category_translations.intro_text). A NULL/blank field
+-- here falls back to the products column of the same name - see
+-- applyProductTranslation() in includes/functions.php. One row per
+-- (product, language).
+CREATE TABLE product_translations (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    product_id INT UNSIGNED NOT NULL,
+    language VARCHAR(5) NOT NULL,
+    name VARCHAR(200) NULL,
+    short_description VARCHAR(500) NULL,
+    description TEXT NULL,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    UNIQUE KEY uniq_product_lang (product_id, language)
+) ENGINE=InnoDB;
+
 -- image_path is always the original upload; cropped_path (if set) is a
 -- generated derivative in the exact crop_w x crop_h dimensions chosen in
 -- the back office and is what the frontend gallery/thumbnails display.
@@ -142,6 +161,32 @@ CREATE TABLE product_option_values (
     sku_suffix VARCHAR(32) NULL,
     sort_order INT NOT NULL DEFAULT 0,
     FOREIGN KEY (product_option_id) REFERENCES product_options(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Per-language override for an option group's name (e.g. "Size" -> "Größe").
+-- product_options/product_option_values are fully deleted and recreated on
+-- every product save (admin/product_edit.php) - these translation rows are
+-- always re-inserted alongside the fresh option/value rows in that same
+-- request (the admin form resubmits every language's fields every save,
+-- not just the active tab), so they survive a save even when the admin
+-- only touched price/stock and never looked at the translations tab.
+CREATE TABLE product_option_translations (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    product_option_id INT UNSIGNED NOT NULL,
+    language VARCHAR(5) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    FOREIGN KEY (product_option_id) REFERENCES product_options(id) ON DELETE CASCADE,
+    UNIQUE KEY uniq_option_lang (product_option_id, language)
+) ENGINE=InnoDB;
+
+-- Per-language override for one option value (e.g. "Red" -> "Rot").
+CREATE TABLE product_option_value_translations (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    product_option_value_id INT UNSIGNED NOT NULL,
+    language VARCHAR(5) NOT NULL,
+    value VARCHAR(100) NOT NULL,
+    FOREIGN KEY (product_option_value_id) REFERENCES product_option_values(id) ON DELETE CASCADE,
+    UNIQUE KEY uniq_value_lang (product_option_value_id, language)
 ) ENGINE=InnoDB;
 
 -- A "variant" is one full combination of option values (one value from

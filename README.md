@@ -234,12 +234,25 @@ every page:
 - Dates are formatted per-language too (`formatLocalDate()`: `Aug 25, 2026`
   vs. `25.08.2026`).
 - **Scope note**: this covers the UI chrome (navigation, labels, buttons,
-  messages, emails, invoices) in both languages. Merchant-entered *content*
-  - product names/descriptions, category names - is stored once and shown
-    as-is regardless of language (the same single-catalog approach most
-    platforms use unless you add a dedicated multi-language catalog
-    plugin). CMS pages (`pages` table) are the one piece of content that
-    *is* structured for translation - see [admin/pages.php](admin/pages.php).
+  messages, emails, invoices) in both languages. **Product name, short
+  description, description, and option group/value labels** (e.g. "Size" /
+  "S, M, L") are translatable too - **Admin → Products → edit** has a
+  language tab per available language; a language left blank falls back to
+  the product's base/default-language text, per field. Under the hood, the
+  `products`/`product_options`/`product_option_values` rows keep holding
+  only the default-language content exactly as before; every other
+  language lives in a separate `product_translations` /
+  `product_option_translations` / `product_option_value_translations` row
+  (`applyProductTranslation()`/`applyOptionTranslations()` in
+  `includes/functions.php` overlay the visitor's language at display time).
+  Storefront search and name-sorting on `index.php`/`search.php` match/sort
+  against the translated text too when browsing in a non-default language.
+  **Category names** are the one piece of merchant content that's still
+  single-catalog (only a category's `intro_text` is per-language, same as
+  before) - translating them the same way products are would be a
+  reasonable follow-up if you need it. CMS pages (`pages` table) remain
+  structured differently again: one whole row per language - see
+  [admin/pages.php](admin/pages.php).
 
 ## Menus
 
@@ -533,9 +546,11 @@ admin/settings.php           Shop/payment/bank details, layout/theme/language/VA
   authoritative price used at add-to-cart/checkout time) - if you change
   the discount math, update both.
 - **Language coverage**: the storefront/admin UI chrome and all emails are
-  fully translated EN/DE, and CMS pages support one row per language. Other
-  merchant-entered content (product/category names and descriptions) is
-  single-language - see [Languages](#languages) for why and how to extend
+  fully translated EN/DE, CMS pages support one row per language, and
+  product name/short description/description/option labels are
+  per-language too (Admin → Products → edit) - see [Languages](#languages).
+  Category *names* remain single-language (only a category's `intro_text`
+  is translatable) - see [Languages](#languages) for why and how to extend
   that if you need it.
 - **SimplePdf** (`includes/SimplePdf.php`) only supports the core Helvetica
   fonts via WinAnsiEncoding (~Latin-1/Windows-1252) - it covers English and

@@ -317,6 +317,7 @@ return [
     'admin.product_edit.status_draft'                     => 'Draft',
     'admin.product_edit.status_archived'                   => 'Archived',
     'admin.product_edit.short_description'                  => 'Short description',
+    'admin.product_edit.translation_hint'                    => 'Optional - leave any field blank to fall back to {lang}.',
     'admin.product_edit.enter_price_as'                      => 'Enter price as',
     'admin.product_edit.price_net'                            => 'Net (before tax)',
     'admin.product_edit.price_gross'                           => 'Gross (incl. tax)',

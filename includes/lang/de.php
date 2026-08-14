@@ -318,6 +318,7 @@ return [
     'admin.product_edit.status_draft'                     => 'Entwurf',
     'admin.product_edit.status_archived'                   => 'Archiviert',
     'admin.product_edit.short_description'                  => 'Kurzbeschreibung',
+    'admin.product_edit.translation_hint'                    => 'Optional - leeres Feld verwendet als Rückgriff {lang}.',
     'admin.product_edit.enter_price_as'                      => 'Preis eingeben als',
     'admin.product_edit.price_net'                            => 'Netto (vor Steuern)',
     'admin.product_edit.price_gross'                           => 'Brutto (inkl. Steuer)',

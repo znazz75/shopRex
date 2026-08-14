@@ -500,6 +500,197 @@ function getCategoryIntroText(int $categoryId, string $lang): ?string
 }
 
 // ---------------------------------------------------------------
+// Product/option translations (Admin -> Products -> edit). Unlike
+// category names (single-language, only intro_text is translatable) or
+// pages (one whole row per language), a product's own row keeps holding
+// the site's default-language content exactly as before - these tables
+// (product_translations / product_option_translations /
+// product_option_value_translations) only ever hold OTHER languages, one
+// row per (entity, language). See docs in sql/schema.sql for why.
+// ---------------------------------------------------------------
+
+/**
+ * Overlays $lang's translation onto $product - per field (name/
+ * short_description/description), falling back to $product's own
+ * base-language value whenever that field has no translation or the
+ * translation is blank, same fallback philosophy as __() and
+ * getCategoryIntroText(). A no-op when $lang is the site's default
+ * language, since the base columns already hold exactly that. Every
+ * template already reads $product['name']/['short_description']/
+ * ['description'], so calling this once right after a product SELECT is
+ * the only change needed - templates don't know or care whether the
+ * value came from `products` or a translation.
+ */
+function applyProductTranslation(array $product, ?string $lang = null): array
+{
+    $lang = $lang ?? getCurrentLanguage();
+    if (empty($product['id']) || $lang === getSetting('default_language', 'en')) {
+        return $product;
+    }
+
+    $stmt = db()->prepare(
+        'SELECT name, short_description, description FROM product_translations WHERE product_id = ? AND language = ?'
+    );
+    $stmt->execute([$product['id'], $lang]);
+    $translation = $stmt->fetch();
+    if ($translation) {
+        foreach (['name', 'short_description', 'description'] as $field) {
+            if (!empty($translation[$field])) {
+                $product[$field] = $translation[$field];
+            }
+        }
+    }
+    return $product;
+}
+
+/**
+ * Same idea as applyProductTranslation() but for an option-group tree -
+ * the shape product.php/admin/product_edit.php already build (`SELECT *
+ * FROM product_options ...` with each row's `values[]` sub-array
+ * attached). Overlays $lang's option-group name and each value's text,
+ * per field, falling back to the base name/value.
+ */
+function applyOptionTranslations(array $options, ?string $lang = null): array
+{
+    $lang = $lang ?? getCurrentLanguage();
+    if (!$options || $lang === getSetting('default_language', 'en')) {
+        return $options;
+    }
+
+    $optionIds = array_column($options, 'id');
+    $placeholders = implode(',', array_fill(0, count($optionIds), '?'));
+    $nameStmt = db()->prepare(
+        "SELECT product_option_id, name FROM product_option_translations WHERE language = ? AND product_option_id IN ($placeholders)"
+    );
+    $nameStmt->execute([$lang, ...$optionIds]);
+    $namesByOptionId = array_column($nameStmt->fetchAll(), 'name', 'product_option_id');
+
+    $valueIds = [];
+    foreach ($options as $opt) {
+        foreach ($opt['values'] as $val) {
+            $valueIds[] = $val['id'];
+        }
+    }
+    $valuesByValueId = [];
+    if ($valueIds) {
+        $vPlaceholders = implode(',', array_fill(0, count($valueIds), '?'));
+        $valStmt = db()->prepare(
+            "SELECT product_option_value_id, value FROM product_option_value_translations WHERE language = ? AND product_option_value_id IN ($vPlaceholders)"
+        );
+        $valStmt->execute([$lang, ...$valueIds]);
+        $valuesByValueId = array_column($valStmt->fetchAll(), 'value', 'product_option_value_id');
+    }
+
+    foreach ($options as &$opt) {
+        if (!empty($namesByOptionId[$opt['id']])) {
+            $opt['name'] = $namesByOptionId[$opt['id']];
+        }
+        foreach ($opt['values'] as &$val) {
+            if (!empty($valuesByValueId[$val['id']])) {
+                $val['value'] = $valuesByValueId[$val['id']];
+            }
+        }
+        unset($val);
+    }
+    unset($opt);
+
+    return $options;
+}
+
+/**
+ * Every language's product_translations row for $productId, keyed by
+ * language - used to prefill Admin -> Products -> edit's per-language
+ * tabs. Unlike applyProductTranslation(), this isn't limited to one
+ * language and doesn't fall back - it's for editing, not display.
+ */
+function getProductTranslationsByLanguage(int $productId): array
+{
+    $stmt = db()->prepare(
+        'SELECT language, name, short_description, description FROM product_translations WHERE product_id = ?'
+    );
+    $stmt->execute([$productId]);
+    $byLang = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $byLang[$row['language']] = $row;
+    }
+    return $byLang;
+}
+
+/**
+ * Option-group-name and option-value translations for every group in
+ * $options (same shape as applyOptionTranslations()), pre-joined into
+ * ready-to-render form values and keyed by [$groupIndex][$language] -
+ * matching the same sequential group/value ordering
+ * admin/product_edit.php's save handler and its $options/$opt['values']
+ * loops already use, so the edit form can prefill translation inputs
+ * positionally the same way it already prefills variant stock
+ * ($variantStockByCombo). A group's value string is always exactly as
+ * many comma-separated segments as it has values - a value with no
+ * translation yet becomes an empty segment rather than being omitted, so
+ * position alignment survives even a partially-translated group.
+ *
+ * Returns ['names' => [$groupIndex => [$lang => $name]],
+ *          'values' => [$groupIndex => [$lang => 'val1, val2, ...']]].
+ */
+function getOptionTranslationsForForm(array $options): array
+{
+    $result = ['names' => [], 'values' => []];
+    if (!$options) {
+        return $result;
+    }
+
+    $optionIds = array_column($options, 'id');
+    $placeholders = implode(',', array_fill(0, count($optionIds), '?'));
+    $nameStmt = db()->prepare(
+        "SELECT product_option_id, language, name FROM product_option_translations WHERE product_option_id IN ($placeholders)"
+    );
+    $nameStmt->execute($optionIds);
+    $namesByOptionId = [];
+    foreach ($nameStmt->fetchAll() as $row) {
+        $namesByOptionId[$row['product_option_id']][$row['language']] = $row['name'];
+    }
+
+    $valueIds = [];
+    foreach ($options as $opt) {
+        foreach ($opt['values'] as $val) {
+            $valueIds[] = $val['id'];
+        }
+    }
+    $valuesByValueId = [];
+    if ($valueIds) {
+        $vPlaceholders = implode(',', array_fill(0, count($valueIds), '?'));
+        $valStmt = db()->prepare(
+            "SELECT product_option_value_id, language, value FROM product_option_value_translations WHERE product_option_value_id IN ($vPlaceholders)"
+        );
+        $valStmt->execute($valueIds);
+        foreach ($valStmt->fetchAll() as $row) {
+            $valuesByValueId[$row['product_option_value_id']][$row['language']] = $row['value'];
+        }
+    }
+
+    foreach (array_values($options) as $groupIndex => $opt) {
+        $result['names'][$groupIndex] = $namesByOptionId[$opt['id']] ?? [];
+
+        $valueCount = count($opt['values']);
+        $perLangPositional = [];
+        foreach (array_values($opt['values']) as $valueIndex => $val) {
+            foreach (($valuesByValueId[$val['id']] ?? []) as $lang => $text) {
+                $perLangPositional[$lang][$valueIndex] = $text;
+            }
+        }
+        foreach ($perLangPositional as $lang => $positional) {
+            $joined = [];
+            for ($k = 0; $k < $valueCount; $k++) {
+                $joined[] = $positional[$k] ?? '';
+            }
+            $result['values'][$groupIndex][$lang] = implode(', ', $joined);
+        }
+    }
+
+    return $result;
+}
+
+// ---------------------------------------------------------------
 // Product helpers: discounts (with optional date range) and the
 // available_from/available_until visibility window.
 // ---------------------------------------------------------------

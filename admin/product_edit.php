@@ -60,6 +60,19 @@ if ($id) {
 $categories = flattenCategoryTree(getCategoryTree());
 $errors = [];
 
+// Translations (Admin -> Products -> edit -> language tabs): the default
+// language's name/short_description/description/option fields keep using
+// the existing $product/$options data untouched; every other language
+// gets its own parallel set of inputs, prefilled here and upserted in the
+// save handler below. See includes/functions.php for the helpers and
+// sql/schema.sql for why the base products/product_options/
+// product_option_values rows never hold anything but the default language.
+$availableLangs = getAvailableLanguages();
+$defaultLang = getSetting('default_language', 'en');
+$otherLanguages = array_diff(array_keys($availableLangs), [$defaultLang]);
+$productTranslations = $id ? getProductTranslationsByLanguage($id) : [];
+$optionTranslationsForForm = getOptionTranslationsForForm($options);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf();
 
@@ -151,6 +164,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $productId = (int)$pdo->lastInsertId();
             }
 
+            // Translations for name/short_description/description - one
+            // upsert (delete-then-insert, same transaction) per non-default
+            // language, skipped entirely if the admin left all three of
+            // that language's fields blank. product_id is stable across
+            // edits (products aren't recreated), so unlike the options
+            // below this needs no carry-forward trick.
+            foreach ($otherLanguages as $langCode) {
+                $tName = trim($_POST['name_translations'][$langCode] ?? '');
+                $tShort = trim($_POST['short_description_translations'][$langCode] ?? '');
+                $tDesc = trim($_POST['description_translations'][$langCode] ?? '');
+                $pdo->prepare('DELETE FROM product_translations WHERE product_id = ? AND language = ?')->execute([$productId, $langCode]);
+                if ($tName !== '' || $tShort !== '' || $tDesc !== '') {
+                    $pdo->prepare(
+                        'INSERT INTO product_translations (product_id, language, name, short_description, description) VALUES (?, ?, ?, ?, ?)'
+                    )->execute([$productId, $langCode, $tName !== '' ? $tName : null, $tShort !== '' ? $tShort : null, $tDesc !== '' ? $tDesc : null]);
+                }
+            }
+
             // Option groups: option_name[] / option_values[] (comma-separated).
             // $groupIndex is a fresh sequential counter over only the
             // non-empty groups (skipping a blank row entirely) - this has
@@ -161,6 +192,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $optionNames = $_POST['option_name'] ?? [];
             $optionValues = $_POST['option_values'] ?? [];
             $newValueIdByGroupText = [];
+            // Same value ids as $newValueIdByGroupText, but keyed by a
+            // contiguous 0-based position within the group instead of by
+            // text - what a translated values list (option_values_translations)
+            // is aligned against, since it obviously can't be matched by the
+            // (untranslated) base text. Matches how getOptionTranslationsForForm()
+            // (includes/functions.php) numbers positions when prefilling this
+            // same form, since both just count "the Nth value that actually
+            // exists", in the same sort_order.
+            $newValueIdByGroupPosition = [];
             $groupIndex = 0;
             foreach ($optionNames as $i => $optName) {
                 $optName = trim($optName);
@@ -172,12 +212,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $optionId = (int)$pdo->lastInsertId();
 
                 $valStmt = $pdo->prepare('INSERT INTO product_option_values (product_option_id, value, stock_quantity, sort_order) VALUES (?, ?, ?, ?)');
+                $position = 0;
                 foreach (explode(',', $valuesRaw) as $j => $val) {
                     $val = trim($val);
                     if ($val === '') continue;
                     $valStmt->execute([$optionId, $val, $stockQuantity, $j]);
-                    $newValueIdByGroupText[$groupIndex][$val] = (int)$pdo->lastInsertId();
+                    $valueId = (int)$pdo->lastInsertId();
+                    $newValueIdByGroupText[$groupIndex][$val] = $valueId;
+                    $newValueIdByGroupPosition[$groupIndex][$position] = $valueId;
+                    $position++;
                 }
+
+                // Translations for this option group's name and values,
+                // keyed by the raw form row index $i (NOT $groupIndex - a
+                // blank row earlier in the form would otherwise misalign
+                // them; $i is what the form's per-language inputs are
+                // actually keyed by, see the template below). Values are
+                // matched by position against $newValueIdByGroupPosition,
+                // same comma-separated convention as the base field.
+                foreach ($otherLanguages as $langCode) {
+                    $translatedName = trim($_POST['option_name_translations'][$langCode][$i] ?? '');
+                    if ($translatedName !== '') {
+                        $pdo->prepare('INSERT INTO product_option_translations (product_option_id, language, name) VALUES (?, ?, ?)')
+                            ->execute([$optionId, $langCode, $translatedName]);
+                    }
+                    $translatedValuesRaw = trim($_POST['option_values_translations'][$langCode][$i] ?? '');
+                    if ($translatedValuesRaw !== '') {
+                        foreach (explode(',', $translatedValuesRaw) as $valuePosition => $tVal) {
+                            $tVal = trim($tVal);
+                            if ($tVal === '' || !isset($newValueIdByGroupPosition[$groupIndex][$valuePosition])) continue;
+                            $pdo->prepare('INSERT INTO product_option_value_translations (product_option_value_id, language, value) VALUES (?, ?, ?)')
+                                ->execute([$newValueIdByGroupPosition[$groupIndex][$valuePosition], $langCode, $tVal]);
+                        }
+                    }
+                }
+
                 $groupIndex++;
             }
 
@@ -237,12 +306,40 @@ require __DIR__ . '/includes/header.php';
 <form method="post">
   <?= csrfField() ?>
   <div class="card">
-    <div class="form-grid">
-      <div class="form-group"><label for="name"><?= e(__('admin.products.name')) ?></label><input type="text" id="name" name="name" required value="<?= e($product['name'] ?? '') ?>"></div>
-      <div class="form-group"><label for="sku"><?= e(__('admin.dashboard.sku')) ?></label><input type="text" id="sku" name="sku" required value="<?= e($product['sku'] ?? '') ?>"></div>
-    </div>
-    <div class="form-group"><label for="short_description"><?= e(__('admin.product_edit.short_description')) ?></label><input type="text" id="short_description" name="short_description" value="<?= e($product['short_description'] ?? '') ?>"></div>
-    <div class="form-group"><label for="description"><?= e(__('product.description')) ?></label><textarea id="description" name="description" rows="4"><?= e($product['description'] ?? '') ?></textarea></div>
+    <div class="form-group"><label for="sku"><?= e(__('admin.dashboard.sku')) ?></label><input type="text" id="sku" name="sku" required value="<?= e($product['sku'] ?? '') ?>"></div>
+
+    <?php if (count($availableLangs) > 1): ?>
+      <div class="lang-tabs" role="tablist">
+        <?php foreach ($availableLangs as $code => $label): ?>
+          <button type="button" class="btn btn-sm lang-tab-btn <?= $code === $defaultLang ? '' : 'btn-secondary' ?>" data-lang-tab="<?= e($code) ?>"><?= e($label) ?></button>
+        <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
+
+    <?php foreach ($availableLangs as $code => $label): ?>
+      <div data-lang-panel="<?= e($code) ?>" <?= $code === $defaultLang ? '' : 'style="display:none;"' ?>>
+        <?php if ($code === $defaultLang): ?>
+          <div class="form-group"><label for="name"><?= e(__('admin.products.name')) ?></label><input type="text" id="name" name="name" required value="<?= e($product['name'] ?? '') ?>"></div>
+          <div class="form-group"><label for="short_description"><?= e(__('admin.product_edit.short_description')) ?></label><input type="text" id="short_description" name="short_description" value="<?= e($product['short_description'] ?? '') ?>"></div>
+          <div class="form-group"><label for="description"><?= e(__('product.description')) ?></label><textarea id="description" name="description" rows="4"><?= e($product['description'] ?? '') ?></textarea></div>
+        <?php else: ?>
+          <p style="color:var(--color-muted);font-size:13px;margin-top:0;"><?= e(__('admin.product_edit.translation_hint', ['lang' => $availableLangs[$defaultLang]])) ?></p>
+          <div class="form-group">
+            <label for="name_translations_<?= e($code) ?>"><?= e(__('admin.products.name')) ?></label>
+            <input type="text" id="name_translations_<?= e($code) ?>" name="name_translations[<?= e($code) ?>]" value="<?= e($productTranslations[$code]['name'] ?? '') ?>">
+          </div>
+          <div class="form-group">
+            <label for="short_description_translations_<?= e($code) ?>"><?= e(__('admin.product_edit.short_description')) ?></label>
+            <input type="text" id="short_description_translations_<?= e($code) ?>" name="short_description_translations[<?= e($code) ?>]" value="<?= e($productTranslations[$code]['short_description'] ?? '') ?>">
+          </div>
+          <div class="form-group">
+            <label for="description_translations_<?= e($code) ?>"><?= e(__('product.description')) ?></label>
+            <textarea id="description_translations_<?= e($code) ?>" name="description_translations[<?= e($code) ?>]" rows="4"><?= e($productTranslations[$code]['description'] ?? '') ?></textarea>
+          </div>
+        <?php endif; ?>
+      </div>
+    <?php endforeach; ?>
+
     <div class="form-grid">
       <div class="form-group">
         <label for="category_id"><?= e(__('admin.products.category')) ?></label>
@@ -348,6 +445,25 @@ require __DIR__ . '/includes/header.php';
     document.addEventListener('DOMContentLoaded', syncPriceMode);
   </script>
 
+  <script>
+    // Language tab strip (Translations): one global click handler toggles
+    // every matching [data-lang-panel] on the page at once, wherever it
+    // appears - the top name/short description/description block AND each
+    // option row's own per-language name/values panels - so switching
+    // languages once affects the whole form, not just one section.
+    document.querySelectorAll('.lang-tab-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var lang = btn.dataset.langTab;
+        document.querySelectorAll('.lang-tab-btn').forEach(function (b) {
+          b.classList.toggle('btn-secondary', b.dataset.langTab !== lang);
+        });
+        document.querySelectorAll('[data-lang-panel]').forEach(function (panel) {
+          panel.style.display = (panel.dataset.langPanel === lang) ? '' : 'none';
+        });
+      });
+    });
+  </script>
+
   <fieldset>
     <legend><?= e(__('admin.product_edit.discount')) ?></legend>
     <p style="color:var(--color-muted);font-size:13px;margin-top:0;">
@@ -415,13 +531,29 @@ require __DIR__ . '/includes/header.php';
     <?php for ($i = 0; $i < 2; $i++): $existing = $options[$i] ?? null; ?>
       <div class="form-grid" data-option-row>
         <div class="form-group">
-          <label><?= e(__('admin.product_edit.option_name', ['n' => $i + 1])) ?></label>
-          <input type="text" name="option_name[]" placeholder="<?= e(__('admin.product_edit.option_name_placeholder')) ?>" value="<?= e($existing['name'] ?? '') ?>" oninput="scheduleVariantRegen()">
+          <?php foreach ($availableLangs as $code => $label): ?>
+            <div data-lang-panel="<?= e($code) ?>" <?= $code === $defaultLang ? '' : 'style="display:none;"' ?>>
+              <label><?= e(__('admin.product_edit.option_name', ['n' => $i + 1])) ?><?= $code === $defaultLang ? '' : ' (' . e($label) . ')' ?></label>
+              <?php if ($code === $defaultLang): ?>
+                <input type="text" name="option_name[]" placeholder="<?= e(__('admin.product_edit.option_name_placeholder')) ?>" value="<?= e($existing['name'] ?? '') ?>" oninput="scheduleVariantRegen()">
+              <?php else: ?>
+                <input type="text" name="option_name_translations[<?= e($code) ?>][<?= $i ?>]" placeholder="<?= e(__('admin.product_edit.option_name_placeholder')) ?>" value="<?= e($optionTranslationsForForm['names'][$i][$code] ?? '') ?>">
+              <?php endif; ?>
+            </div>
+          <?php endforeach; ?>
         </div>
         <div class="form-group">
-          <label><?= e(__('admin.product_edit.option_values')) ?></label>
-          <input type="text" name="option_values[]" placeholder="<?= e(__('admin.product_edit.option_values_placeholder')) ?>"
-                 value="<?= $existing ? e(implode(', ', array_column($existing['values'], 'value'))) : '' ?>" oninput="scheduleVariantRegen()">
+          <?php foreach ($availableLangs as $code => $label): ?>
+            <div data-lang-panel="<?= e($code) ?>" <?= $code === $defaultLang ? '' : 'style="display:none;"' ?>>
+              <label><?= e(__('admin.product_edit.option_values')) ?><?= $code === $defaultLang ? '' : ' (' . e($label) . ')' ?></label>
+              <?php if ($code === $defaultLang): ?>
+                <input type="text" name="option_values[]" placeholder="<?= e(__('admin.product_edit.option_values_placeholder')) ?>"
+                       value="<?= $existing ? e(implode(', ', array_column($existing['values'], 'value'))) : '' ?>" oninput="scheduleVariantRegen()">
+              <?php else: ?>
+                <input type="text" name="option_values_translations[<?= e($code) ?>][<?= $i ?>]" placeholder="<?= e(__('admin.product_edit.option_values_placeholder')) ?>" value="<?= e($optionTranslationsForForm['values'][$i][$code] ?? '') ?>">
+              <?php endif; ?>
+            </div>
+          <?php endforeach; ?>
         </div>
       </div>
     <?php endfor; ?>

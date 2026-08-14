@@ -24,6 +24,12 @@ if (!$product) {
     exit;
 }
 
+// Overlay the visitor's language onto name/short_description/description
+// (falls back to the base/default-language text per field when no
+// translation exists) - every use of $product below is unchanged, it just
+// reads whichever text ended up in these same array keys.
+$product = applyProductTranslation($product);
+
 // Gallery images (each with its own description/caption)
 $imgStmt = db()->prepare('SELECT * FROM product_images WHERE product_id = ? ORDER BY is_primary DESC, sort_order ASC');
 $imgStmt->execute([$product['id']]);
@@ -39,6 +45,7 @@ foreach ($options as &$opt) {
     $opt['values'] = $valStmt->fetchAll();
 }
 unset($opt);
+$options = applyOptionTranslations($options);
 
 // Exact per-combination stock (see product_variants in sql/schema.sql) -
 // embedded for the JS below, which matches the customer's current

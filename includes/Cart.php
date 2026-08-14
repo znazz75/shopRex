@@ -135,6 +135,12 @@ class Cart
         $subtotal = 0.0;
         $taxTotal = 0.0;
         $taxBreakdown = [];
+        // Current visitor's language (implicit-current-language style, same
+        // as getGrossPrice()/getCurrentLanguage() callers elsewhere) - this
+        // is what makes the order_items snapshot checkout_process.php
+        // writes automatically capture the customer's language, same as
+        // orders.language already drives invoice/email language.
+        $lang = getCurrentLanguage();
 
         foreach ($_SESSION['cart'] ?? [] as $key => $entry) {
             $stmt = db()->prepare(
@@ -149,6 +155,7 @@ class Cart
             if (!$product) {
                 continue; // product removed/deleted
             }
+            $product = applyProductTranslation($product, $lang);
 
             $unitPrice = getEffectivePrice($product);
             $taxRate = getTaxRatePercent($product);
@@ -176,14 +183,20 @@ class Cart
                     // without this, an option value id borrowed from a *different*
                     // product's option group would still be accepted, letting its
                     // price_modifier/stock_quantity be applied to this product
-                    // (see docs/SECURITY_AUDIT.md, finding #1).
+                    // (see docs/SECURITY_AUDIT.md, finding #1). COALESCE overlays
+                    // $lang's option-group-name/value translation (Admin ->
+                    // Products -> edit), falling back to the base text - same
+                    // per-field fallback as applyProductTranslation().
                     $optStmt = db()->prepare(
-                        'SELECT ov.value, ov.price_modifier, ov.stock_quantity, po.name AS option_name
+                        'SELECT COALESCE(povt.value, ov.value) AS value, ov.price_modifier, ov.stock_quantity,
+                                COALESCE(pot.name, po.name) AS option_name
                          FROM product_option_values ov
                          JOIN product_options po ON po.id = ov.product_option_id
+                         LEFT JOIN product_option_translations pot ON pot.product_option_id = po.id AND pot.language = ?
+                         LEFT JOIN product_option_value_translations povt ON povt.product_option_value_id = ov.id AND povt.language = ?
                          WHERE ov.id = ? AND po.product_id = ?'
                     );
-                    $optStmt->execute([$optionValueId, $product['id']]);
+                    $optStmt->execute([$lang, $lang, $optionValueId, $product['id']]);
                     $option = $optStmt->fetch();
                     if ($option) {
                         $unitPrice += (float)$option['price_modifier'];
