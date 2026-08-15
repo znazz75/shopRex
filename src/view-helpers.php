@@ -169,6 +169,26 @@ if (!function_exists('getCategoryIntroText')) {
     }
 }
 
+if (!function_exists('getLegalDocuments')) {
+    /** Every legal document type currently on offer, one row (type + best-language title) each - see Models\LegalDocument::allForLanguage(). */
+    function getLegalDocuments(): array
+    {
+        $settings = Registry::container()->make(SettingsRepository::class);
+        return \ShopRex\Models\LegalDocument::allForLanguage(
+            Registry::container()->make(\PDO::class),
+            I18n::current(),
+            $settings->get('default_language', 'en')
+        );
+    }
+}
+
+if (!function_exists('getLegalDocumentUrl')) {
+    function getLegalDocumentUrl(string $type): string
+    {
+        return rtrim(SITE_URL, '/') . '/legal/' . urlencode($type);
+    }
+}
+
 if (!function_exists('getActiveDiscount')) {
     function getActiveDiscount(array $product): ?array
     {

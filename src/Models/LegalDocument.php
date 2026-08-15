@@ -49,6 +49,31 @@ class LegalDocument extends Model
         return $this->sourceMode === 'generated' ? $this->generatedPdfPath : $this->filePath;
     }
 
+    /**
+     * One row per distinct `type` that has at least one document, for
+     * building a storefront listing of what's available at /legal/{type} -
+     * `type` is admin-defined free text (see the class docblock), so the
+     * storefront can't hardcode which ones exist. Same current-language ->
+     * default-language -> any fallback as findForTypeAndLanguage(), just
+     * computed for every type at once instead of a single lookup.
+     */
+    public static function allForLanguage(\PDO $pdo, string $lang, string $defaultLang = 'en'): array
+    {
+        $rows = $pdo->query('SELECT type, language, title FROM legal_documents ORDER BY type, language')->fetchAll();
+
+        $byType = [];
+        foreach ($rows as $row) {
+            $byType[$row['type']][$row['language']] = $row;
+        }
+
+        $result = [];
+        foreach ($byType as $type => $byLang) {
+            $best = $byLang[$lang] ?? $byLang[$defaultLang] ?? reset($byLang);
+            $result[] = ['type' => $type, 'title' => $best['title']];
+        }
+        return $result;
+    }
+
     public function upsert(\PDO $pdo): void
     {
         $stmt = $pdo->prepare(

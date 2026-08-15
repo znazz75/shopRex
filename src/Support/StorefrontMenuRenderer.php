@@ -54,6 +54,22 @@ final class StorefrontMenuRenderer
     }
 
     /**
+     * Admin -> Legal Documents' entries (Controllers\Storefront\LegalDocumentController
+     * serves each at /legal/{type}) - `type` is admin-defined free text, so
+     * the storefront can't hardcode which ones exist; this just lists
+     * whatever getLegalDocuments() currently finds. Rendered as its own
+     * block rather than folded into renderFooter() since these come from
+     * a different source table than menu_items, not because the markup
+     * differs.
+     */
+    public static function renderFooterLegalDocuments(array $documents): void
+    {
+        foreach ($documents as $doc) {
+            echo '<li class="mb-2"><a class="link-light link-underline-opacity-0 link-underline-opacity-75-hover" href="' . e(getLegalDocumentUrl($doc['type'])) . '">' . e($doc['title']) . '</a></li>';
+        }
+    }
+
+    /**
      * "Sidebar Filters" theme package's persistent category tree
      * (src/Views/storefront/theme/sidebar/home.php) - only expands a
      * branch that's either the active category itself or one of its

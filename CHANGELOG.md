@@ -8,6 +8,19 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [2.04] - 2026-08-15
+
+### Added
+- The `/legal/{type}` download route (Admin -> Legal Documents' uploaded-
+  or-generated PDFs) is now actually linked from the storefront: the
+  footer's "Links" column lists every document type currently on offer,
+  each pointing at its own `/legal/{type}`. Since `type` is admin-defined
+  free text (not a fixed set), the list is built dynamically
+  (`Models\LegalDocument::allForLanguage()`) rather than hardcoded -
+  same current-language -> shop-default-language -> any fallback as a
+  single document's own lookup. Previously the route existed and worked
+  but nothing in the UI ever pointed at it.
+
 ## [2.03] - 2026-08-15
 
 ### Fixed

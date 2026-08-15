@@ -4,6 +4,7 @@
 use ShopRex\Support\StorefrontMenuRenderer;
 
 $footerMenu = getMenuTree('footer');
+$legalDocuments = getLegalDocuments();
 $shopName = getSetting('shop_name', SITE_NAME);
 $shopEmail = getSetting('shop_email', ADMIN_EMAIL);
 ?>
@@ -19,6 +20,7 @@ $shopEmail = getSetting('shop_email', ADMIN_EMAIL);
         <h6 class="text-white"><?= e(__('footer.links')) ?></h6>
         <ul class="list-unstyled">
           <?php StorefrontMenuRenderer::renderFooter($footerMenu); ?>
+          <?php StorefrontMenuRenderer::renderFooterLegalDocuments($legalDocuments); ?>
         </ul>
       </div>
       <div class="col-lg-4">
