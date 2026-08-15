@@ -8,6 +8,20 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [2.05] - 2026-08-15
+
+### Added
+- `sql/seed_demo.sql`'s three demo products (and their Size/Color options)
+  now carry German and French translations - previously the optional demo
+  data had none at all, so installing with it and switching the storefront
+  to DE/FR silently fell back to the English text everywhere (working as
+  designed via `Services\TranslationOverlay`, but making the trilingual
+  feature look untested rather than just untranslated on a fresh demo
+  install). Size letters (S/M/L) are left untranslated on purpose - they're
+  the same abbreviation in all three languages, so that's the fallback
+  behavior in action, not a gap. Category names stay English-only by
+  design either way (see `category_translations`' schema comment).
+
 ## [2.04] - 2026-08-15
 
 ### Added

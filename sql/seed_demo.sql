@@ -74,3 +74,38 @@ INSERT INTO product_variant_values (product_variant_id, product_option_value_id)
 INSERT INTO menu_items (location, label, link_type, link_value, sort_order) VALUES
     ('main', 'Apparel', 'category', '1', 3),
     ('main', 'Accessories', 'category', '5', 4);
+
+-- German/French translations for the demo products and their options - the
+-- point of this file is to show the shop working out of the box, and that
+-- includes the trilingual product/option translation feature itself (see
+-- README.md's "Language coverage" note); without these rows, switching to
+-- DE/FR silently falls back to the English text everywhere via
+-- Services\TranslationOverlay, which looked like the feature was untested
+-- rather than just untranslated. Category names stay English-only by
+-- design (see category_translations' comment in schema.sql) - only
+-- products/options/option-values are translated this way.
+INSERT INTO product_translations (product_id, language, name, short_description, description) VALUES
+    (1, 'de', 'Klassisches T-Shirt', 'Weiches Baumwoll-T-Shirt für den Alltag.', 'Ein klassisch geschnittenes T-Shirt aus 100 % gekämmter Baumwolle. Erhältlich in mehreren Größen und Farben.'),
+    (1, 'fr', 'T-shirt classique', 'T-shirt en coton doux pour un usage quotidien.', 'Un t-shirt de coupe classique en coton peigné 100 %. Disponible en plusieurs tailles et couleurs.'),
+    (2, 'de', 'Kuschel-Hoodie', 'Warmer Fleece-Hoodie mit Bauchtasche.', 'Bleiben Sie warm mit diesem strapazierfähigen Fleece-Hoodie mit Kängurutasche und verstellbarer Kordelzug-Kapuze.'),
+    (2, 'fr', 'Sweat à capuche confortable', 'Sweat à capuche chaud en polaire avec poche kangourou.', 'Restez au chaud avec ce sweat à capuche épais en polaire, doté d''une poche kangourou et d''une capuche ajustable à cordon.'),
+    (3, 'de', 'Baseballkappe', 'Verstellbare Baseballkappe aus Baumwolle.', 'Verstellbare Baseballkappe in Einheitsgröße mit gesticktem Logo.'),
+    (3, 'fr', 'Casquette de baseball', 'Casquette de baseball réglable en coton.', 'Casquette de baseball réglable taille unique avec logo brodé.');
+
+-- Option group names ("Size"/"Color" -> "Größe"/"Farbe"/"Taille"/"Couleur").
+-- Relies on product_options auto-assigning ids 1-3 in the insertion order
+-- above (Size=1, Color=2, product 2's Size=3).
+INSERT INTO product_option_translations (product_option_id, language, name) VALUES
+    (1, 'de', 'Größe'), (1, 'fr', 'Taille'),
+    (2, 'de', 'Farbe'), (2, 'fr', 'Couleur'),
+    (3, 'de', 'Größe'), (3, 'fr', 'Taille');
+
+-- Option *values* - only Color needs real translation (White/Black); the
+-- S/M/L size letters are the same abbreviation in all three languages, so
+-- those intentionally have no row here and fall back to the base value,
+-- which doubles as a demonstration of that fallback behavior. Relies on
+-- product_option_values' ids 1-8 as documented in the INSERT above
+-- (White=4, Black=5).
+INSERT INTO product_option_value_translations (product_option_value_id, language, value) VALUES
+    (4, 'de', 'Weiß'), (4, 'fr', 'Blanc'),
+    (5, 'de', 'Schwarz'), (5, 'fr', 'Noir');
