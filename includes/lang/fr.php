@@ -171,6 +171,8 @@ return [
     'account.delete_success'                     => 'Votre compte a été supprimé. Au revoir !',
     'account.privacy_heading'                      => 'Confidentialité',
     'page.not_found_title'                           => 'Page introuvable',
+    'page.not_found_text'                            => 'Désolé, cette page est introuvable.',
+    'category.not_found_text'                        => 'Désolé, cette catégorie est introuvable.',
 
     // ---- Search page ----
     'search.title'           => 'Recherche',

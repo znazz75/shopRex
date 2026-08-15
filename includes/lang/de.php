@@ -171,6 +171,8 @@ return [
     'account.delete_success'                     => 'Ihr Konto wurde gelöscht. Auf Wiedersehen!',
     'account.privacy_heading'                      => 'Datenschutz',
     'page.not_found_title'                           => 'Seite nicht gefunden',
+    'page.not_found_text'                            => 'Diese Seite konnte leider nicht gefunden werden.',
+    'category.not_found_text'                        => 'Diese Kategorie konnte leider nicht gefunden werden.',
 
     // ---- Search page ----
     'search.title'           => 'Suche',

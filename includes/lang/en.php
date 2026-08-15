@@ -170,6 +170,8 @@ return [
     'account.delete_success'                     => 'Your account has been deleted. Goodbye!',
     'account.privacy_heading'                      => 'Privacy',
     'page.not_found_title'                           => 'Page not found',
+    'page.not_found_text'                            => 'Sorry, this page could not be found.',
+    'category.not_found_text'                        => 'Sorry, this category could not be found.',
 
     // ---- Search page ----
     'search.title'           => 'Search',

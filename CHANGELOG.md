@@ -8,6 +8,16 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [2.06] - 2026-08-15
+
+### Fixed
+- `src/Views/storefront/page/not_found.php` and `category/not_found.php`
+  showed a hardcoded English "could not be found" message regardless of
+  the storefront's active language, unlike their `product/`/`order/`
+  siblings which already went through `__()`. Added `page.not_found_text`/
+  `category.not_found_text` keys (en/de/fr) and switched both views to
+  use them. Found during a documentation pass over the storefront views.
+
 ## [2.05] - 2026-08-15
 
 ### Added
