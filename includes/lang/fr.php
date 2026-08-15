@@ -2,7 +2,7 @@
 /**
  * French. Only needs to list keys that differ from includes/lang/en.php -
  * anything missing here silently falls back to English (see __() in
- * includes/i18n.php) - but for a complete translation every en.php key is
+ * Services\I18n) - but for a complete translation every en.php key is
  * mirrored here.
  */
 return [

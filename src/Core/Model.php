@@ -67,7 +67,7 @@ abstract class Model
         return $row;
     }
 
-    /** Shortcut to the shared PDO database connection (from the legacy Database class - see includes/functions.php's db() for the non-OOP equivalent). */
+    /** Shortcut to the shared PDO database connection (from the legacy Database class - see the db() shim in src/view-helpers.php for the non-OOP equivalent). */
     protected static function pdo(): \PDO
     {
         return \Database::getConnection();

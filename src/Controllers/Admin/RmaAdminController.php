@@ -7,6 +7,7 @@ use ShopRex\Core\Request;
 use ShopRex\Core\Response;
 use ShopRex\Models\RmaTicket;
 use ShopRex\Services\I18n;
+use ShopRex\Services\Mailer;
 
 /**
  * New in v2.00 - admin review queue for Controllers\Storefront\RmaController's
@@ -130,7 +131,7 @@ final class RmaAdminController extends AdminCrudController
         // recorded one - keeps the notification readable to the customer even
         // for old orders predating this column.
         $lang = $order['language'] ?: I18n::current();
-        $rendered = \Mailer::render('rma_ticket_status_update', $lang, [
+        $rendered = Mailer::render('rma_ticket_status_update', $lang, [
             'order_number'      => e($order['order_number']),
             'status'            => e($status),
             // e() escapes the notes for HTML, nl2br() then turns the admin's
@@ -138,7 +139,7 @@ final class RmaAdminController extends AdminCrudController
             // paragraph structure.
             'resolution_notes'  => $resolutionNotes !== '' ? '<p>' . nl2br(e($resolutionNotes)) . '</p>' : '',
         ]);
-        \Mailer::send($order['customer_email'], $rendered['subject'], $rendered['html'], 'rma_ticket_status_update', (int)$order['id']);
+        Mailer::send($order['customer_email'], $rendered['subject'], $rendered['html'], 'rma_ticket_status_update', (int)$order['id']);
     }
 
     /** Looks up one order by id, with its customer's (or guest's) email/name attached - shared by show() and notifyCustomer(). */

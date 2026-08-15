@@ -11,6 +11,7 @@ use ShopRex\Models\Order;
 use ShopRex\Models\Product;
 use ShopRex\Models\RmaTicket;
 use ShopRex\Services\I18n;
+use ShopRex\Services\Mailer;
 use ShopRex\Services\SettingsRepository;
 
 /**
@@ -156,18 +157,18 @@ final class RmaController extends Controller
         }
 
         $lang = I18n::current();
-        $received = \Mailer::render('rma_ticket_received', $lang, [
+        $received = Mailer::render('rma_ticket_received', $lang, [
             'customer_name' => e($customer['first_name'] ?? ''), 'order_number' => e($order->orderNumber),
             'product_name' => e($item['product_name']),
         ]);
-        \Mailer::send($customer['email'] ?? $order->customerEmail, $received['subject'], $received['html'], 'rma_ticket_received', $order->id);
+        Mailer::send($customer['email'] ?? $order->customerEmail, $received['subject'], $received['html'], 'rma_ticket_received', $order->id);
 
         $shopEmail = $this->settings->get('shop_email', ADMIN_EMAIL);
-        $notifyShop = \Mailer::render('rma_ticket_notify_shop', $lang, [
+        $notifyShop = Mailer::render('rma_ticket_notify_shop', $lang, [
             'order_number' => e($order->orderNumber), 'product_name' => e($item['product_name']),
             'warranty_claim_type' => e($claimType), 'defect_description' => nl2br(e($description)),
         ]);
-        \Mailer::send((string)$shopEmail, $notifyShop['subject'], $notifyShop['html'], 'rma_ticket_notify_shop', $order->id);
+        Mailer::send((string)$shopEmail, $notifyShop['subject'], $notifyShop['html'], 'rma_ticket_notify_shop', $order->id);
 
         $this->flash('success', __('rma.submitted'));
         return $this->redirect('/account/orders/' . urlencode($order->orderNumber) . '/rma');

@@ -4,7 +4,7 @@
  * product image, built on the third-party Cropper.js library (loaded from
  * a CDN below). The crop rectangle the admin drags out gets sent to the
  * server, which does the actual pixel-cropping/resizing server-side (see
- * includes/ImageProcessor.php) and stores the result as this image's
+ * Services\ImageProcessor) and stores the result as this image's
  * "cropped" version - the one products/images.php and getPrimaryImage()
  * prefer to show once it exists.
  *

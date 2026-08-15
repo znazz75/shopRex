@@ -9,6 +9,7 @@ use ShopRex\Core\Request;
 use ShopRex\Core\Response;
 use ShopRex\Models\ContactMessage;
 use ShopRex\Services\I18n;
+use ShopRex\Services\Mailer;
 use ShopRex\Services\RateLimiter;
 
 /**
@@ -124,13 +125,13 @@ final class ContactController extends Controller
         // one confirming receipt to the person who sent it. e()/nl2br(e())
         // escape the user-supplied text before it's embedded in HTML email,
         // preventing it from injecting markup into the email template.
-        $notifyShop = \Mailer::render('contact_form_notify_shop', $lang, [
+        $notifyShop = Mailer::render('contact_form_notify_shop', $lang, [
             'name' => e($name), 'email' => e($email), 'subject' => e($subject ?: '(no subject)'), 'message' => nl2br(e($message)),
         ]);
-        \Mailer::send((string)$shopEmail, $notifyShop['subject'], $notifyShop['html'], 'contact_form_notify_shop');
+        Mailer::send((string)$shopEmail, $notifyShop['subject'], $notifyShop['html'], 'contact_form_notify_shop');
 
-        $confirmation = \Mailer::render('contact_form_confirmation', $lang, ['name' => e($name)]);
-        \Mailer::send($email, $confirmation['subject'], $confirmation['html'], 'contact_form_confirmation');
+        $confirmation = Mailer::render('contact_form_confirmation', $lang, ['name' => e($name)]);
+        Mailer::send($email, $confirmation['subject'], $confirmation['html'], 'contact_form_confirmation');
 
         return $this->render('contact/show', [
             'errors' => [], 'sent' => true, 'name' => '', 'email' => '', 'pageTitle' => __('contact.title'),

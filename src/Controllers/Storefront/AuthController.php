@@ -8,6 +8,7 @@ use ShopRex\Core\Controller;
 use ShopRex\Core\Request;
 use ShopRex\Core\Response;
 use ShopRex\Services\I18n;
+use ShopRex\Services\Mailer;
 use ShopRex\Services\RateLimiter;
 
 /**
@@ -161,7 +162,7 @@ final class AuthController extends Controller
             $this->request->session()->set('customer_id', $newCustomerId);
             CustomerAuth::forget();
             $this->flash('success', __('auth.welcome', ['name' => $firstName]));
-            \Mailer::sendRegistrationWelcome($newCustomerId);
+            Mailer::sendRegistrationWelcome($newCustomerId);
             return $this->redirect('/account');
         }
 
@@ -219,7 +220,7 @@ final class AuthController extends Controller
                 $token = bin2hex(random_bytes(32));
                 $this->pdo->prepare('UPDATE customers SET password_reset_token = ?, password_reset_expires_at = DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id = ?')
                     ->execute([$token, $customer['id']]);
-                \Mailer::sendPasswordReset($customer, $token);
+                Mailer::sendPasswordReset($customer, $token);
             }
         }
 

@@ -265,7 +265,7 @@ final class SettingsAdminController extends AdminCrudController
         ) + ['pageTitle' => __('admin.settings')]);
     }
 
-    /** Mirrors the THEMES const in includes/functions.php (color accent, separate from theme *packages*). List of hardcoded color presets (accent color + navbar color + Bootstrap light/dark mode) the admin can pick between - this recolors CSS variables within whichever theme package/layout is active, it doesn't change page structure. */
+    /** Mirrors getActiveTheme()'s lookup array in src/view-helpers.php (color accent, separate from theme *packages*). List of hardcoded color presets (accent color + navbar color + Bootstrap light/dark mode) the admin can pick between - this recolors CSS variables within whichever theme package/layout is active, it doesn't change page structure. */
     private function colorThemes(): array
     {
         return [

@@ -7,6 +7,8 @@ use ShopRex\Models\Order;
 use ShopRex\Payment\CapturableGateway;
 use ShopRex\Payment\PaymentGatewayFactory;
 use ShopRex\Payment\TestGateway;
+// InvoiceGenerator/Mailer are unqualified below - both already live in
+// this same ShopRex\Services namespace, so no `use` import is needed.
 
 /**
  * Direct, line-cited port of checkout_process.php's two responsibilities:
@@ -265,7 +267,7 @@ final class CheckoutService
         // Generate the invoice PDF (in the order's language) before emailing
         // the confirmation, so it can go out as an attachment.
         try {
-            \InvoiceGenerator::generateForOrder($order->toRow(), $orderItems);
+            InvoiceGenerator::generateForOrder($order->toRow(), $orderItems);
         } catch (\Throwable $e) {
             error_log('Invoice generation failed for order ' . $orderNumber . ': ' . $e->getMessage());
         }
@@ -274,7 +276,7 @@ final class CheckoutService
         // "pending" and the customer is sent straight to the confirmation
         // page with instructions.
         $this->cart->clear();
-        \Mailer::sendOrderConfirmation($order->toRow(), $orderItems);
+        Mailer::sendOrderConfirmation($order->toRow(), $orderItems);
 
         return new PlaceOrderResult($order, $result['redirect_url'] ?? null);
     }

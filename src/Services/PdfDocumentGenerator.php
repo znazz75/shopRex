@@ -15,7 +15,7 @@ final class PdfDocumentGenerator
     /** Turns a plain-text title + body into a simple paginated PDF (bold title, then word-wrapped body paragraphs) and returns the raw PDF file bytes - used when an admin types a legal document's text directly instead of uploading a ready-made PDF. */
     public function generate(string $title, string $bodyText): string
     {
-        $pdf = new \SimplePdf();
+        $pdf = new SimplePdf();
         $margin = 50;
         $width = $pdf->pageWidth();
         // How close to the bottom of the page text is allowed to get before

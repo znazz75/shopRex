@@ -1,4 +1,7 @@
 <?php
+
+namespace ShopRex\Services;
+
 /**
  * GD-based cropping for product images - lets an admin pick a rectangle
  * out of an uploaded product photo (in Admin -> Products -> edit's image
@@ -7,15 +10,11 @@
  * requirements screen if missing, and cropAndSave() below throws if it's
  * unavailable at runtime).
  *
- * Why this class still exists as-is: one of the "legacy classes kept
- * as-is" (see CLAUDE.md's "Legacy classes kept as-is" section) - it was
- * already a proper, single-purpose class before the OOP rewrite, so it's
- * `require_once`'d as-is from src/container.php rather than ported into
- * the ShopRex\ namespace. `Controllers\Admin\ProductImageController` calls
- * its existing static isSupported()/cropAndSave() entry points unchanged.
+ * Static-methods-only by design (no per-request state) -
+ * Controllers\Admin\ImageCropController calls isSupported()/cropAndSave()
+ * directly.
  */
-
-class ImageProcessor
+final class ImageProcessor
 {
     // Maps an image MIME type to the specific GD "load from file" function
     // that can decode it - looked up by cropAndSave() below so the right
@@ -51,10 +50,10 @@ class ImageProcessor
         string $outputBasename
     ): string {
         if (!self::isSupported()) {
-            throw new RuntimeException('The GD extension is not available on this server.');
+            throw new \RuntimeException('The GD extension is not available on this server.');
         }
         if (!is_file($sourcePath)) {
-            throw new RuntimeException('Source image not found.');
+            throw new \RuntimeException('Source image not found.');
         }
 
         // getimagesize() reads the file's actual header bytes (not its
@@ -64,13 +63,13 @@ class ImageProcessor
         // safely rejected if it isn't really an image at all).
         $info = getimagesize($sourcePath);
         if (!$info) {
-            throw new RuntimeException('Could not read image dimensions.');
+            throw new \RuntimeException('Could not read image dimensions.');
         }
         [$origWidth, $origHeight] = $info;
         $mime = $info['mime'];
 
         if (!isset(self::MIME_LOADERS[$mime])) {
-            throw new RuntimeException('Unsupported image type: ' . $mime);
+            throw new \RuntimeException('Unsupported image type: ' . $mime);
         }
 
         // Clamp the crop rectangle to the actual image bounds so a stale
@@ -91,7 +90,7 @@ class ImageProcessor
         $loader = self::MIME_LOADERS[$mime];
         $source = $loader($sourcePath);
         if (!$source) {
-            throw new RuntimeException('Could not load source image.');
+            throw new \RuntimeException('Could not load source image.');
         }
 
         // Blank canvas at the final (cropped+resized) dimensions - the
@@ -150,7 +149,7 @@ class ImageProcessor
         imagedestroy($dest);
 
         if (!$saved) {
-            throw new RuntimeException('Could not write cropped image to disk.');
+            throw new \RuntimeException('Could not write cropped image to disk.');
         }
 
         return $outputFilename;

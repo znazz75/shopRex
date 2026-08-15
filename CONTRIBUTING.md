@@ -57,11 +57,40 @@ sidebar footer). When a change lands on `main`:
    [Releases](../../releases) page; consider also filling in a GitHub
    Release with notes for anything more than a trivial bump.
 
-**Sanctioned exception:** v2.00 (the OOP architecture rewrite) does not
-follow the `+0.01` rule - a declared architecture milestone jumped the
-version directly from `1.01` to `2.00` instead. This is a one-time
-exception, not a change to the convention: everything from `2.01` onward
-goes back to bumping by exactly `0.01` as described above.
+**Sanctioned exceptions:** two declared architecture milestones have
+jumped straight to a new whole-number version instead of following the
+`+0.01` rule:
+- **v2.00** - the OOP architecture rewrite (`1.01` → `2.00`).
+- **v3.00** - removed the last remaining `includes/` classes (everything
+  had already been ported to the `ShopRex\` namespace under `src/` except
+  a handful of classes deliberately kept as-is since the v2.00 rewrite -
+  v3.00 finished that job and deleted `includes/` down to just its
+  language-string data files) (`2.09` → `3.00`).
+
+Neither is a change to the convention itself: every version other than
+these two whole-number jumps bumps by exactly `0.01` as described above.
+
+**No upgrade path from before v3.00**: there is no migrations system
+anywhere in this project - `sql/schema.sql` is always the current
+version's schema only, never a diff/migration against an older one. v3.00
+made this explicit by removing the only concrete backward-compatibility
+affordance that existed (three `try/catch` blocks tolerating a database
+that predated the `invoices` table - see `CHANGELOG.md`'s `[2.09]`
+entry). **A site running a version older than 3.00 cannot be upgraded in
+place** - treat it as a fresh install (or migrate the data by hand,
+entirely outside anything this codebase provides).
+
+**Starting from v3.00, upgrades between ordinary point releases are the
+expected, supported path** - exactly how `2.01` through `2.09` already
+worked in practice: each `+0.01` release is additive (new tables/columns/
+settings alongside the existing ones, via a fresh `sql/schema.sql` import
+plus whatever's new in that version's `CHANGELOG.md` entry), never a
+breaking rewrite of what came before. That expectation holds for every
+ordinary `+0.01` release; it does *not* automatically extend across a
+future "sanctioned exception" whole-number jump (the same kind v2.00 and
+v3.00 were) - a change significant enough to warrant one of those will
+say so explicitly in its own `CHANGELOG.md` entry, the same way this
+section documents v3.00's break from v2.09.
 
 ## Reporting security issues
 

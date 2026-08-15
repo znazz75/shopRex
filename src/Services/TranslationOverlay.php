@@ -123,9 +123,13 @@ final class TranslationOverlay
 
     /**
      * Option-group-name and option-value translations for every group in
-     * $options, pre-joined and keyed by [$groupIndex][$language] - see
-     * includes/functions.php's getOptionTranslationsForForm() docblock for
-     * the full positional-alignment rationale this preserves verbatim.
+     * $options, pre-joined and keyed by [$groupIndex][$language]. Keyed
+     * positionally (by index, not by option/value id) because
+     * Controllers\Admin\ProductEditController deletes and recreates every
+     * product_options/product_option_values row on every save - the ids
+     * are never stable across saves, but the *position* in $options (Size
+     * is always group 0, Color always group 1, etc., for a given product)
+     * is, so that's what the edit form's translation tabs key against.
      */
     public function optionTranslationsForForm(array $options): array
     {

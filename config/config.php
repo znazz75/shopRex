@@ -89,7 +89,7 @@ if (!defined('DB_PASS')) define('DB_PASS', getenv('SHOPREX_DB_PASS') ?: '');
 // "Versioning" section for the project's release/bump convention. Kept as
 // a literal string (not computed from the file) so it's available even in
 // contexts that would rather not touch the filesystem on every request.
-define('SHOPREX_VERSION', '2.09');
+define('SHOPREX_VERSION', '3.00');
 define('SITE_NAME', 'shopRex');
 if (!defined('SITE_URL')) define('SITE_URL', getenv('SHOPREX_SITE_URL') ?: detectSiteUrl());
 if (!defined('ADMIN_EMAIL')) define('ADMIN_EMAIL', getenv('SHOPREX_ADMIN_EMAIL') ?: 'admin@example.com');
@@ -115,7 +115,7 @@ define('UPLOAD_URL', SITE_URL . '/uploads/products/');
 define('INVOICE_DIR', __DIR__ . '/../uploads/invoices/');
 
 // ---------------------------------------------------------------
-// Email (used by includes/Mailer.php)
+// Email (used by Services\Mailer)
 // PHP's built-in mail() is used by default. To send through a real SMTP
 // account (recommended, e.g. Gmail/SendGrid/Mailgun), fill in SMTP_*
 // and wire up PHPMailer per the README.
@@ -164,11 +164,12 @@ date_default_timezone_set('Europe/Berlin');
 
 // ---------------------------------------------------------------
 // Session hardening (defense-in-depth alongside the csrf_token check in
-// includes/functions.php - see requireCsrf()/verifyCsrf()):
+// Core\Csrf - install.php keeps its own small self-contained
+// requireCsrf()/verifyCsrf() copies, since it can't use that class this early):
 //   HttpOnly - client-side JS (incl. injected via XSS) can't read the cookie
 //   SameSite=Lax - blocks the cookie on cross-site POST (the actual CSRF
 //     vector) while still allowing it on top-level GET navigation, which
-//     the PayPal/Stripe redirect-back flow in checkout_process.php needs
+//     the PayPal/Stripe redirect-back flow (/checkout/capture) needs
 //   Secure - only sent over HTTPS, auto-detected so local HTTP dev still works
 // ---------------------------------------------------------------
 if (session_status() === PHP_SESSION_NONE) {

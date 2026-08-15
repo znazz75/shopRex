@@ -137,8 +137,11 @@ HTTPS um (siehe [Sicherheit](#sicherheit)).
 ## Sicherheit
 
 - **CSRF**: jedes zustandsändernde Formular/jeder AJAX-Aufruf ist durch ein
-  sitzungsgebundenes Token geschützt (`csrfField()`/`requireCsrf()` in
-  `includes/functions.php`). `verifyCsrf()` verlangt, dass *beide* - das
+  sitzungsgebundenes Token geschützt (`Core\Csrf`, plus eine kleine,
+  eigenständige Kopie von `csrfField()`/`requireCsrf()`/`verifyCsrf()` in
+  `install.php` selbst, das die übrigen Klassen der App zu diesem
+  frühen Zeitpunkt noch nicht nutzen kann - beide lesen/schreiben denselben
+  Sitzungsschlüssel). `verifyCsrf()` verlangt, dass *beide* - das
   übermittelte und das Sitzungs-Token - vor dem Vergleich nicht leer sind -
   `hash_equals('', '')` liefert in PHP `true`, ohne diese Prüfung könnte
   also eine gefälschte Anfrage ohne Token-Feld durchgehen, solange die
@@ -239,7 +242,7 @@ auszuführen; das später hinzuzufügen wäre eine eigene, sicherheitsgeprüfte
 
 Färbt Buttons, Links, Badges und die Navigationsleiste innerhalb des
 jeweils aktiven Layouts ein. Drei sind ab Werk dabei
-(`includes/functions.php`, Konstante `THEMES`): **Default** (hell),
+(`getActiveTheme()` in `src/view-helpers.php`): **Default** (hell),
 **Midnight** (dunkel, mit Bootstrap 5.3s nativem
 `data-bs-theme="dark"`-Farbmodus) und **Ocean** (hell, Türkis-Akzent).
 Bootstrap wird von einem CDN geladen statt aus Sass gebaut, daher sind die
@@ -248,10 +251,10 @@ verfügbar — jedes Theme setzt eine benutzerdefinierte Eigenschaft
 `--shop-accent`, die `assets/css/style.css` nutzt, um genau die
 Bootstrap-Klassen einzufärben, die dieses Projekt tatsächlich verwendet
 (Buttons, Links, Badges, Formular-Checkboxen usw.). Zum Hinzufügen: einen
-Eintrag zu `THEMES` mit `bs_theme` (`light`/`dark`), einer `accent`-Hexfarbe
-und einer `navbar_bg`-Hexfarbe hinzufügen — keine CSS-Änderungen nötig,
-außer Sie möchten etwas über die bereits in `style.css` gelisteten Elemente
-hinaus einfärben.
+Eintrag zum Lookup-Array dieser Funktion mit `bs_theme` (`light`/`dark`),
+einer `accent`-Hexfarbe und einer `navbar_bg`-Hexfarbe hinzufügen — keine
+CSS-Änderungen nötig, außer Sie möchten etwas über die bereits in
+`style.css` gelisteten Elemente hinaus einfärben.
 
 ## Sprachen
 
@@ -262,7 +265,7 @@ ohne Codeänderungen auf jeder Seite aufzunehmen:
 - `includes/lang/en.php`, `de.php` und `fr.php` geben jeweils ein flaches
   Array `'namespace.key' => 'string'` zurück (640 Schlüssel, über alle drei
   synchron gehalten); `__('key', ['token' => $value])`
-  (`includes/i18n.php`) schlägt die aktuelle Sprache nach, fällt bei
+  (`Services\I18n::t()`) schlägt die aktuelle Sprache nach, fällt bei
   fehlenden Einträgen auf Englisch zurück und ersetzt `{token}`-Platzhalter.
 - **Eine Sprache hinzufügen**, indem eine neue `includes/lang/xx.php`-Datei
   mit denselben Schlüsseln abgelegt wird (ein Eintrag `_meta_name` legt den
@@ -277,8 +280,8 @@ ohne Codeänderungen auf jeder Seite aufzunehmen:
   hatte, bevor sie deaktiviert wurde), verschwindet aber aus jeder
   Sprachauswahl, aus `?lang=` und aus den Sprach-Tabs in
   Seiten/E-Mail-Vorlagen/Kategorien/Produkten, sobald sie abgewählt wird
-  (`getEnabledLanguages()` in `includes/i18n.php`, im Unterschied zu
-  `getAvailableLanguages()` für „jede vorhandene Datei"). **Wird nur eine
+  (`Services\I18n::enabledLanguages()`, im Unterschied zu
+  `::availableLanguages()` für „jede vorhandene Datei"). **Wird nur eine
   Sprache aktiviert, entfällt die Sprachumschaltung vollständig** - die
   Auswahl wird nur angezeigt, wenn mehr als eine Sprache aktiviert ist.
   Mindestens eine Sprache bleibt immer aktiviert; wird ohne Auswahl
@@ -309,9 +312,8 @@ ohne Codeänderungen auf jeder Seite aufzunehmen:
   Text der Standardsprache wie bisher; jede weitere Sprache liegt in einer
   eigenen Zeile in `product_translations` /
   `product_option_translations` / `product_option_value_translations`
-  (`applyProductTranslation()`/`applyOptionTranslations()` in
-  `includes/functions.php` legen die Sprache des Besuchers bei der
-  Anzeige darüber). Shop-Suche und Namenssortierung
+  (`Services\TranslationOverlay` legt die Sprache des Besuchers bei der
+  Anzeige über diese Basiszeilen). Shop-Suche und Namenssortierung
   (`Controllers\Storefront\CatalogController`/`SearchController`)
   durchsuchen/sortieren beim Browsen in einer Nicht-Standardsprache
   ebenfalls den übersetzten Text.
@@ -377,7 +379,8 @@ jede Liste - keine Notwendigkeit, sie in der URL zu wiederholen. Bis eine
 Wahl getroffen wurde, nutzt die Seite den unter **Admin → Einstellungen →
 Produktlisten** konfigurierten Standard (`items_per_page_default`, ab
 Werk `20`). Bootstrap-Paginierungssteuerelemente (`renderPagination()` in
-`includes/functions.php`) erscheinen, sobald es mehr als eine Seite gibt.
+`src/view-helpers.php`, delegiert an `Support\Pagination`) erscheinen,
+sobald es mehr als eine Seite gibt.
 
 ## Rabatte & Verfügbarkeitszeiträume
 
@@ -389,7 +392,7 @@ Verfügbarkeitszeitraum**) kann unabhängig voneinander haben:
   Badge (z. B. „20% Rabatt" oder „3,00 € sparen") neben dem Preis sowohl im
   Produktraster als auch auf der Produktseite angezeigt, mit einer Zeile
   „Angebot gültig ..." / „Angebot endet ...", sobald eine Datumsgrenze
-  gesetzt ist (`formatDiscountDateRange()` in `includes/functions.php`).
+  gesetzt ist (`formatDiscountDateRange()` in `src/view-helpers.php`).
   Die Sortierung nach Preis im Produktraster nutzt den aktuell
   rabattierten Preis.
 - **Einen Verfügbarkeitszeitraum** - `available_from`/`available_until`.
@@ -416,7 +419,8 @@ Standard für neue Produkte markiert.
   wurde, damit das Formular es beim nächsten Mal wieder so anzeigt.
 - **Anzeige im Shop**: Produktlisten und die Produktseite zeigen immer den
   **Brutto**-Preis (inkl. Steuer) (`getGrossPrice()` in
-  `includes/functions.php`), mit dem Hinweis „Preise inkl. MwSt.".
+  `src/view-helpers.php`, delegiert an `Services\TaxCalculator`), mit dem
+  Hinweis „Preise inkl. MwSt.".
 - **Warenkorb/Kasse**: zeigt den **Netto**-Preis plus eine nach Satz
   aufgeschlüsselte MwSt.-Zeile (ein Warenkorb mit Artikeln zu zwei
   unterschiedlichen Sätzen zeigt zwei MwSt.-Zeilen) -
@@ -464,7 +468,7 @@ Weiterleitungen ist).
 
 ## E-Mail-Vorlagen
 
-[includes/Mailer.php](includes/Mailer.php) nutzt standardmäßig PHPs
+`Services\Mailer` nutzt standardmäßig PHPs
 eingebautes `mail()`, damit das Framework ohne Pflichtabhängigkeiten
 auskommt. Jeder Sendeversuch wird in der Tabelle `email_log` protokolliert.
 Für den Produktivbetrieb [PHPMailer](https://github.com/PHPMailer/PHPMailer)
@@ -513,7 +517,7 @@ Bestellung), in der Sprache der Bestellung, und:
 
 Die Rechnung selbst - Shop-Name, Rechnungs-/Bestellnummer, Rechnungsadresse,
 eine Artikeltabelle und eine nach Satz gruppierte MwSt.-Aufschlüsselung,
-sofern zutreffend - wird mit [includes/SimplePdf.php](includes/SimplePdf.php)
+sofern zutreffend - wird mit `Services\SimplePdf`
 gerendert, einem kleinen, abhängigkeitsfreien PDF-Writer, der eigens für
 dieses Projekt gebaut wurde (Kern-Helvetica-Schriften über
 WinAnsiEncoding, das deutsche Umlaute/ß und anderen Latin-1-Text abdeckt;
@@ -530,19 +534,19 @@ Composer-Paket wie `dompdf/dompdf` einsetzen.
   (`/account/export`); ein Admin kann dasselbe für
   jeden Kunden unter **Admin → Kunden → [Kunde] → Daten exportieren**
   (Admin → Kunden → Daten exportieren) tun. Beide
-  rufen dieselbe Funktion `GdprTools::exportData()` auf.
+  rufen dieselbe Funktion `Services\GdprService::exportData()` auf.
 - **Löschung ("Recht auf Vergessenwerden")**: Kunden können ihr eigenes
   Konto löschen (erneute Passworteingabe erforderlich,
   `/account/delete`); Admins können das jedes
   Kunden unter **Admin → Kunden → [Kunde] → Konto löschen (DSGVO)** tun.
-  Beide rufen `GdprTools::deleteCustomer()` auf, das die Zeile in
+  Beide rufen `Services\GdprService::deleteCustomer()` auf, das die Zeile in
   `customers` unwiderruflich löscht (und deren Adressen kaskadierend
   mitlöscht), aber **die Bestellungen behält**, mit bereinigtem
   `shipping_name`/Adresse/Notizen - eine Auslegung von Art. 17 Abs. 3 lit.
   b DSGVO, der Daten ausnimmt, die für eine gesetzliche
   Aufbewahrungspflicht (Buchhaltungs-/Steuerunterlagen) benötigt werden.
   Bereits erzeugte Rechnungs-PDFs werden **nicht** rückwirkend geschwärzt
-  (passen Sie `GdprTools::deleteCustomer()` an, falls die
+  (passen Sie `Services\GdprService::deleteCustomer()` an, falls die
   Aufbewahrungsregeln in Ihrer Rechtsordnung von diesem Standard
   abweichen).
 - **Automatisierte Inaktivitätslöschung**: **Admin → Einstellungen →
@@ -550,8 +554,8 @@ Composer-Paket wie `dompdf/dompdf` einsetzen.
   Löschung ausgelöst wird (Standard 24). 3 Monate vor Erreichen dieser
   Schwelle erhält ein Kunde eine Warn-E-Mail (Vorlage
   `account_deletion_warning`) - jede erneute Anmeldung storniert die
-  Löschung. `runGdprInactivityCleanup()` in
-  [includes/GdprCleanup.php](includes/GdprCleanup.php) erledigt beide
+  Löschung. `Services\GdprService::runInactivityCleanup()`
+  (`admin/cron/gdpr_cleanup.php` ist der CLI-Einstiegspunkt) erledigt beide
   Schritte; täglich über einen echten System-Cron ausführen:
   ```bash
   0 3 * * * php /path/to/shopRex/admin/cron/gdpr_cleanup.php
@@ -586,18 +590,18 @@ anpassen.
 ## Projektstruktur
 
 Router-basiert, nicht eine physische Datei pro Seite - die vollständige
-Aufschlüsselung (Namespaces, Klassenverantwortlichkeiten, die wenigen
-bewusst unverändert übernommenen Legacy-Klassen) steht im Abschnitt
-"Architecture" von [CLAUDE.md](CLAUDE.md).
+Aufschlüsselung (Namespaces, Klassenverantwortlichkeiten, warum
+`install.php` die einzige Datei ist, die nicht über `src/` läuft) steht im
+Abschnitt "Architecture" von [CLAUDE.md](CLAUDE.md).
 
 ```
-install.php           Ersteinrichtungsassistent (siehe Installation oben) - läuft eigenständig, außerhalb von src/
+install.php           Ersteinrichtungsassistent (siehe Installation oben) - läuft eigenständig,
+                       außerhalb von src/, mit eigenen kleinen, in sich geschlossenen Kopien
+                       von e()/CSRF/writeInstalledConfigFile()
 config/                DB- und Site-Konfiguration; installed.php wird generiert, nicht eingecheckt
-includes/              Gemeinsames PHP, weiterhin genutzt von install.php und einer Handvoll
-                       unverändert übernommener Legacy-Klassen (siehe unten): eine ausgedünnte
-                       functions.php, Cart, Mailer, PaymentGateway, ImageProcessor (GD-Zuschnitt),
-                       SimplePdf + InvoiceGenerator, GdprTools + GdprCleanup, i18n (__()/Sprachdateien)
-includes/lang/en.php, de.php, fr.php   Übersetzungsstrings (Sprache hinzufügen: neue xx.php hier ablegen)
+includes/lang/en.php, de.php, fr.php   Übersetzungsstrings (Sprache hinzufügen: neue xx.php
+                       hier ablegen) - das einzige, was noch unter includes/ liegt (v3.00 hat
+                       jede PHP-Klasse entfernt, die dort früher lag)
 src/                   Die objektorientierte Anwendung - per src/.htaccess vom direkten Web-
                        Zugriff gesperrt; nur über index.php / admin/index.php erreichbar
 src/bootstrap.php       Autoloader + config/database-Includes + Container-Aufbau
@@ -610,8 +614,9 @@ src/Models/             Product, Category, Cart, Order, Customer, ShippingMethod
                        MenuItem, Page, CustomerRequest (abstrakt) + WithdrawalRequest/RmaTicket,
                        ContactMessage, LegalDocument, ...
 src/Services/           CategoryTreeService, MenuTreeService, TaxCalculator, DiscountCalculator,
-                       ShippingCalculator, TranslationOverlay, CheckoutService, InvoiceService,
-                       Mailer, GdprService, RateLimiter, SettingsRepository, I18n, ...
+                       ShippingCalculator, TranslationOverlay, CheckoutService, InvoiceGenerator,
+                       SimplePdf, Mailer, ImageProcessor, GdprService, RateLimiter,
+                       SettingsRepository, I18n, ...
 src/Payment/            PaymentGateway-/CapturableGateway-Interfaces + PayPal-/CreditCard-/
                        BankTransfer-/Invoice-/Test-Implementierungen
 src/Controllers/Storefront/, src/Controllers/Admin/   Eine Controller-Klasse je Seite/Bereich
@@ -649,7 +654,7 @@ sql/seed_demo.sql      Optionale Demo-Kategorien/-Produkte/-Menülinks (Checkbox
   Markup/Skripte in den Shop einschleusen; behandeln Sie „wer darf Seiten
   bearbeiten" als gleichbedeutend mit „wer darf den Code der Seite
   bearbeiten".
-- Der Bildzuschnitt (`includes/ImageProcessor.php`) benötigt die
+- Der Bildzuschnitt (`Services\ImageProcessor`) benötigt die
   PHP-Erweiterung `gd`; ohne sie funktionieren Uploads weiterhin, aber der
   Zuschneiden-Button zeigt einen Fehler an, statt ein zugeschnittenes
   Derivat zu erzeugen.
@@ -660,14 +665,13 @@ sql/seed_demo.sql      Optionale Demo-Kategorien/-Produkte/-Menülinks (Checkbox
   Testkonto angemeldet** ist - es gibt kein „Test-Gastbestellung"-Konzept
   (ein Konto ist das, was Admin → Kunden anlegt, und `is_test_account`
   lebt auf dieser Zeile).
-- Die Formel für den rabattierten Preis ist bewusst dreimal vorhanden:
+- Die Formel für den rabattierten Preis ist bewusst zweimal vorhanden:
   einmal in SQL (`Controllers\Storefront\CatalogController`/
-  `SearchController`, für Sortierung/Filterung), einmal in PHP
-  (`Services\DiscountCalculator`, für die Anzeige) und einmal in
-  `getActiveDiscount()` in `includes/functions.php` (der maßgebliche
-  Preis, den `Cart.php` beim Hinzufügen zum Warenkorb/an der Kasse nutzt)
-  - bei Änderungen an der Rabattlogik müssen alle drei aktualisiert
-  werden.
+  `SearchController`, für Sortierung/Filterung) und einmal in PHP
+  (`Services\DiscountCalculator`, genutzt sowohl vom View-Helper-Shim
+  `getActiveDiscount()` für die Anzeige als auch direkt von `Models\Cart`
+  für den maßgeblichen Preis beim Hinzufügen zum Warenkorb/an der Kasse)
+  - bei Änderungen an der Rabattlogik müssen beide aktualisiert werden.
 - **Sprachabdeckung**: die UI-Umgebung im Shop/Backend und alle E-Mails
   sind vollständig ins Englische/Deutsche/Französische übersetzt,
   CMS-Seiten unterstützen eine Zeile pro Sprache, und
@@ -677,7 +681,7 @@ sql/seed_demo.sql      Optionale Demo-Kategorien/-Produkte/-Menülinks (Checkbox
   `intro_text` einer Kategorie ist übersetzbar) - siehe
   [Sprachen](#sprachen) für die Gründe und wie sich das bei Bedarf
   erweitern lässt.
-- **SimplePdf** (`includes/SimplePdf.php`) unterstützt nur die
+- **SimplePdf** (`Services\SimplePdf`) unterstützt nur die
   Kern-Helvetica-Schriften über WinAnsiEncoding (~Latin-1/Windows-1252) -
   das deckt Englisch, Deutsch und Französisch (sowie die meisten
   westeuropäischen Sprachen) ab, aber z. B. nicht Kyrillisch, Griechisch

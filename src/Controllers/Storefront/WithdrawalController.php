@@ -10,6 +10,7 @@ use ShopRex\Core\Response;
 use ShopRex\Models\Order;
 use ShopRex\Models\WithdrawalRequest;
 use ShopRex\Services\I18n;
+use ShopRex\Services\Mailer;
 use ShopRex\Services\SettingsRepository;
 
 /**
@@ -113,16 +114,16 @@ final class WithdrawalController extends Controller
         $withdrawal = WithdrawalRequest::createFor($order, $customer, $reason, $validIds, $this->pdo, $this->settings);
 
         $lang = I18n::current();
-        $received = \Mailer::render('withdrawal_request_received', $lang, [
+        $received = Mailer::render('withdrawal_request_received', $lang, [
             'customer_name' => e($customer['first_name'] ?? ''), 'order_number' => e($order->orderNumber),
         ]);
-        \Mailer::send($customer['email'] ?? $order->customerEmail, $received['subject'], $received['html'], 'withdrawal_request_received', $order->id);
+        Mailer::send($customer['email'] ?? $order->customerEmail, $received['subject'], $received['html'], 'withdrawal_request_received', $order->id);
 
         $shopEmail = $this->settings->get('shop_email', ADMIN_EMAIL);
-        $notifyShop = \Mailer::render('withdrawal_request_notify_shop', $lang, [
+        $notifyShop = Mailer::render('withdrawal_request_notify_shop', $lang, [
             'order_number' => e($order->orderNumber), 'reason' => e($reason ?: '(none given)'),
         ]);
-        \Mailer::send((string)$shopEmail, $notifyShop['subject'], $notifyShop['html'], 'withdrawal_request_notify_shop', $order->id);
+        Mailer::send((string)$shopEmail, $notifyShop['subject'], $notifyShop['html'], 'withdrawal_request_notify_shop', $order->id);
 
         $this->flash('success', __('withdrawal.submitted'));
         return $this->redirect('/account/orders/' . urlencode($order->orderNumber) . '/withdrawal');

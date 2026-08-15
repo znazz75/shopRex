@@ -1,4 +1,7 @@
 <?php
+
+namespace ShopRex\Services;
+
 /**
  * Minimal, dependency-free PDF writer - just enough to lay out a simple
  * document like an invoice: text at an absolute position (core Helvetica /
@@ -7,12 +10,10 @@
  * more A4 pages. This is not a general-purpose PDF library - no images, no
  * custom fonts, no exact text-width metrics (wrapText() estimates).
  *
- * Why this class still exists as-is: one of the "legacy classes kept
- * as-is" (see CLAUDE.md) - it was already a proper, single-purpose class
- * before the OOP rewrite, so it's `require_once`'d as-is from
- * src/container.php rather than ported into the ShopRex\ namespace.
- * includes/InvoiceGenerator.php is the only caller, using it to lay out
- * the invoice PDF page by page.
+ * Two callers: Services\InvoiceGenerator (order invoices) and
+ * Services\PdfDocumentGenerator (Admin -> Legal Documents' "generate from
+ * typed text" option) - both lay out their own page content using this
+ * class's text()/line()/rect() primitives.
  *
  * Background for newcomers: a PDF file is plain text/bytes structured as a
  * series of numbered "objects" (fonts, pages, the content actually drawn
@@ -26,7 +27,7 @@
  * up, and output() at the bottom assembles into the final object/xref
  * structure a PDF reader expects.
  */
-class SimplePdf
+final class SimplePdf
 {
     private const PAGE_WIDTH = 595.28;  // A4, in points (1/72 inch)
     private const PAGE_HEIGHT = 841.89;

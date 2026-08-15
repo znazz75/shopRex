@@ -126,13 +126,16 @@ request auto-redirect to HTTPS (see [Security](#security)).
 ## Security
 
 - **CSRF**: every state-changing form/AJAX call is protected by a
-  per-session token (`csrfField()`/`requireCsrf()` in
-  `includes/functions.php`). `verifyCsrf()` requires *both* the submitted
-  and the session token to be non-empty before comparing - `hash_equals('',
-  '')` returns `true` in PHP, so without that check a forged request with
-  no token field could pass whenever the victim's session hadn't generated
-  one yet. The session cookie itself is `HttpOnly`, `SameSite=Lax`, and
-  `Secure` over HTTPS (`config/config.php`), and login/registration
+  per-session token (`Core\Csrf`, plus a small self-contained
+  `csrfField()`/`requireCsrf()`/`verifyCsrf()` copy inside `install.php`
+  itself, which can't use the rest of the app's classes this early -
+  both read/write the same session key). `verifyCsrf()` requires *both*
+  the submitted and the session token to be non-empty before comparing -
+  `hash_equals('', '')` returns `true` in PHP, so without that check a
+  forged request with no token field could pass whenever the victim's
+  session hadn't generated one yet. The session cookie itself is
+  `HttpOnly`, `SameSite=Lax`, and `Secure` over HTTPS (`config/config.php`),
+  and login/registration
   regenerate the session ID (`regenerateSession()`) to prevent fixation.
 - **`.htaccess` hardening** (Apache only, see [Requirements](#requirements)):
   the project root sets `X-Frame-Options`, `X-Content-Type-Options`,
@@ -218,18 +221,18 @@ security-reviewed change.
 ### Color accent
 
 Recolors buttons, links, badges, and the navbar within whichever Layout is
-active. Three ship out of the box (`includes/functions.php`, `THEMES`
-constant): **Default** (light), **Midnight** (dark, using Bootstrap 5.3's
-native `data-bs-theme="dark"` color mode), and **Ocean** (light, teal
-accent). Bootstrap is loaded from a CDN rather than built from Sass, so
-component colors are compiled into fixed values instead of runtime CSS
-variables — each theme sets a `--shop-accent` custom property that
-`assets/css/style.css` uses to recolor the specific Bootstrap classes this
-project actually renders (buttons, links, badges, form checks, etc.). To
-add one: add an entry to `THEMES` with a `bs_theme` (`light`/`dark`), an
-`accent` hex color, and a `navbar_bg` hex color — no CSS changes needed
-unless you want to recolor something beyond what's already listed in
-`style.css`.
+active. Three ship out of the box (`getActiveTheme()` in
+`src/view-helpers.php`): **Default** (light), **Midnight** (dark, using
+Bootstrap 5.3's native `data-bs-theme="dark"` color mode), and **Ocean**
+(light, teal accent). Bootstrap is loaded from a CDN rather than built
+from Sass, so component colors are compiled into fixed values instead of
+runtime CSS variables — each theme sets a `--shop-accent` custom property
+that `assets/css/style.css` uses to recolor the specific Bootstrap classes
+this project actually renders (buttons, links, badges, form checks, etc.).
+To add one: add an entry to that function's lookup array with a
+`bs_theme` (`light`/`dark`), an `accent` hex color, and a `navbar_bg` hex
+color — no CSS changes needed unless you want to recolor something beyond
+what's already listed in `style.css`.
 
 ## Languages
 
@@ -239,7 +242,7 @@ changes to every page:
 
 - `includes/lang/en.php`, `de.php`, and `fr.php` each return a flat
   `'namespace.key' => 'string'` array (640 keys, kept in lockstep across all
-  three); `__('key', ['token' => $value])` (`includes/i18n.php`) looks up
+  three); `__('key', ['token' => $value])` (`Services\I18n::t()`) looks up
   the current language, falls back to English for anything missing, and
   does `{token}` substitution.
 - **Add a language** by dropping a new `includes/lang/xx.php` file with the
@@ -253,8 +256,8 @@ changes to every page:
   that captured it before being disabled) but disappears from every
   switcher, `?lang=`, and the per-language tabs in Pages/Email
   Templates/Categories/Products the moment it's unchecked
-  (`getEnabledLanguages()` in `includes/i18n.php`, vs.
-  `getAvailableLanguages()` for "every file that exists"). **Enabling just
+  (`Services\I18n::enabledLanguages()`, vs. `::availableLanguages()` for
+  "every file that exists"). **Enabling just
   one language removes language-switching UI entirely** - the picker only
   ever renders when more than one is enabled. At least one language always
   stays enabled; saving with none checked re-enables all of them rather
@@ -281,8 +284,8 @@ changes to every page:
   only the default-language content exactly as before; every other
   language lives in a separate `product_translations` /
   `product_option_translations` / `product_option_value_translations` row
-  (`applyProductTranslation()`/`applyOptionTranslations()` in
-  `includes/functions.php` overlay the visitor's language at display time).
+  (`Services\TranslationOverlay` overlays the visitor's language onto
+  those base rows at display time).
   Storefront search and name-sorting (`Controllers\Storefront\CatalogController`/
   `SearchController`) match/sort against the translated text too when
   browsing in a non-default language.
@@ -340,7 +343,8 @@ every listing for the rest of their visit - no need to repeat it in the URL.
 Until they pick one, the site uses the default configured in **Admin →
 Settings → Product Listings** (`items_per_page_default`, ships as `20`).
 Bootstrap pagination controls (`renderPagination()` in
-`includes/functions.php`) appear whenever there's more than one page.
+`src/view-helpers.php`, delegating to `Support\Pagination`) appear
+whenever there's more than one page.
 
 ## Discounts & availability windows
 
@@ -351,7 +355,7 @@ fieldsets) can independently have:
   start and/or end date/time. While active it renders as a badge (e.g. "20%
   off" or "Save €3.00") next to the price on both the product grid and the
   product page, with an "Offer valid ..." / "Offer ends ..." line whenever a
-  date bound is set (`formatDiscountDateRange()` in `includes/functions.php`).
+  date bound is set (`formatDiscountDateRange()` in `src/view-helpers.php`).
   Sorting by price on the product grid uses the currently-discounted price.
 - **An availability window** - `available_from`/`available_until`. Outside
   that window the product is fully hidden: absent from listings/search *and*
@@ -373,7 +377,8 @@ fieldsets) can independently have:
   you last typed into, so the form shows it back the same way next time.
 - **Frontend display**: product listings and the product page always show
   the **gross** (tax-included) price (`getGrossPrice()` in
-  `includes/functions.php`), with a "Prices include VAT" note.
+  `src/view-helpers.php`, delegating to `Services\TaxCalculator`), with a
+  "Prices include VAT" note.
 - **Cart/checkout**: show the **net** price plus a VAT line broken out by
   rate (a cart with items at two different rates shows two VAT lines) -
   `Cart::getItems()`'s `tax_total`/`tax_breakdown`. Net + tax always sums to
@@ -411,7 +416,7 @@ not bulletproof against abandoned redirects).
 
 ## Email templates
 
-`includes/Mailer.php` uses PHP's built-in `mail()` by
+`Services\Mailer` uses PHP's built-in `mail()` by
 default so the framework has zero required dependencies. Every send attempt
 is logged to the `email_log` table. For real-world delivery, install
 [PHPMailer](https://github.com/PHPMailer/PHPMailer) via Composer and swap
@@ -456,7 +461,7 @@ is created) in the order's language, and:
 
 The invoice itself - shop name, invoice/order number, billing address, an
 itemized table, and a VAT breakdown grouped by rate when applicable - is
-rendered with `includes/SimplePdf.php`, a small,
+rendered with `Services\SimplePdf`, a small,
 dependency-free PDF writer built for this project (core Helvetica fonts via
 WinAnsiEncoding, which covers German umlauts/ß and other Latin-1 text;
 no images, no custom fonts, multi-page support via a simple pagination
@@ -470,24 +475,24 @@ simple invoices, swap in a Composer package like `dompdf/dompdf` instead.
   Export My Data** (`/account/export`); an admin can
   do the same for any customer from **Admin → Customers → [customer] →
   Export Data** (Admin → Customers → Export Data).
-  Both call the same `GdprTools::exportData()`.
+  Both call the same `Services\GdprService::exportData()`.
 - **Deletion ("right to erasure")**: customers can delete their own account
   (password re-entry required, `/account/delete`);
   admins can delete any customer's from **Admin → Customers → [customer] →
-  Delete Account (GDPR)**. Both call `GdprTools::deleteCustomer()`, which
+  Delete Account (GDPR)**. Both call `Services\GdprService::deleteCustomer()`, which
   hard-deletes the `customers` row (and cascades their addresses) but
   **keeps their orders** with `shipping_name`/address/notes scrubbed - a
   reading of GDPR Art. 17(3)(b), which exempts data needed for a legal
   retention obligation (accounting/tax records). Invoice PDFs already
   generated are **not** retroactively redacted (adjust
-  `GdprTools::deleteCustomer()` if your jurisdiction's retention rules
-  differ from this default).
+  `Services\GdprService::deleteCustomer()` if your jurisdiction's
+  retention rules differ from this default).
 - **Automated inactivity deletion**: **Admin → Settings → Data Retention**
   sets how many months of inactivity trigger deletion (default 24).
   3 months before that threshold, a customer is emailed a warning
   (`account_deletion_warning` template) - logging in at any point cancels
-  it. `includes/GdprCleanup.php`'s
-  `runGdprInactivityCleanup()` does both steps; run it daily via a real
+  it. `Services\GdprService::runInactivityCleanup()` does both steps
+  (`admin/cron/gdpr_cleanup.php` is the CLI entry point); run it daily via a real
   system cron:
   ```bash
   0 3 * * * php /path/to/shopRex/admin/cron/gdpr_cleanup.php
@@ -520,16 +525,15 @@ header/footer, Admin → Pages/Menus/Product Images/Image Crop views).
 
 Router-based, not one-physical-file-per-page — see [CLAUDE.md](CLAUDE.md)'s
 "Architecture" section for the full breakdown (namespaces, class
-responsibilities, the handful of legacy classes deliberately kept as-is).
+responsibilities, why `install.php` is the one file that can't go
+through `src/`).
 
 ```
-install.php           First-run setup wizard (see Setup above) - runs standalone, outside src/
+install.php           First-run setup wizard (see Setup above) - runs standalone, outside src/,
+                       with its own small self-contained copies of e()/CSRF/writeInstalledConfigFile()
 config/                DB + site configuration; installed.php is generated, not committed
-includes/              Shared PHP still used by install.php and a handful of legacy classes
-                       src/ loads as-is (see below): a pruned functions.php, Cart, Mailer,
-                       PaymentGateway, ImageProcessor (GD cropping), SimplePdf + InvoiceGenerator,
-                       GdprTools + GdprCleanup, i18n (__()/language files)
-includes/lang/en.php, de.php, fr.php   Translation strings (add a language: drop a new xx.php here)
+includes/lang/en.php, de.php, fr.php   Translation strings (add a language: drop a new xx.php here) -
+                       the only thing left under includes/ (v3.00 removed every PHP class that used to live there)
 src/                   The OOP application - blocked from direct web access (src/.htaccess);
                        reached only through index.php / admin/index.php
 src/bootstrap.php       Autoloader + config/database requires + Container wiring
@@ -542,8 +546,9 @@ src/Models/             Product, Category, Cart, Order, Customer, ShippingMethod
                        MenuItem, Page, CustomerRequest (abstract) + WithdrawalRequest/RmaTicket,
                        ContactMessage, LegalDocument, ...
 src/Services/           CategoryTreeService, MenuTreeService, TaxCalculator, DiscountCalculator,
-                       ShippingCalculator, TranslationOverlay, CheckoutService, InvoiceService,
-                       Mailer, GdprService, RateLimiter, SettingsRepository, I18n, ...
+                       ShippingCalculator, TranslationOverlay, CheckoutService, InvoiceGenerator,
+                       SimplePdf, Mailer, ImageProcessor, GdprService, RateLimiter,
+                       SettingsRepository, I18n, ...
 src/Payment/            PaymentGateway/CapturableGateway interfaces + PayPal/CreditCard/
                        BankTransfer/Invoice/Test implementations
 src/Controllers/Storefront/, src/Controllers/Admin/   One controller class per page/section
@@ -579,7 +584,7 @@ sql/seed_demo.sql      Optional demo categories/products/menu links (installer c
   edit Pages (Super Admin or Manager) can inject arbitrary markup/scripts
   into the storefront; treat "who can edit pages" as equivalent to "who
   can edit the site's code."
-- Image cropping (`includes/ImageProcessor.php`) requires the PHP `gd`
+- Image cropping (`Services\ImageProcessor`) requires the PHP `gd`
   extension; without it, uploads still work but the Crop button will show
   an error instead of generating a cropped derivative.
 - "Crop" produces one derivative per image (replacing the previous one on
@@ -589,10 +594,10 @@ sql/seed_demo.sql      Optional demo categories/products/menu links (installer c
   Admin → Customers creates, and `is_test_account` lives on that row).
 - The discounted-price formula is intentionally duplicated once in SQL
   (`Controllers\Storefront\CatalogController`/`SearchController`, for
-  sorting/filtering) and once in PHP (`Services\DiscountCalculator`, for
-  display, and `getActiveDiscount()` in `includes/functions.php` for the
-  authoritative price used by `Cart.php` at add-to-cart/checkout time) -
-  if you change the discount math, update all three.
+  sorting/filtering) and once in PHP (`Services\DiscountCalculator`,
+  used both by the `getActiveDiscount()` view-helper shim for display and
+  directly by `Models\Cart` for the authoritative price at add-to-cart/
+  checkout time) - if you change the discount math, update both.
 - **Language coverage**: the storefront/admin UI chrome and all emails are
   fully translated EN/DE/FR, CMS pages support one row per language, and
   product name/short description/description/option labels are
@@ -600,7 +605,7 @@ sql/seed_demo.sql      Optional demo categories/products/menu links (installer c
   Category *names* remain single-language (only a category's `intro_text`
   is translatable) - see [Languages](#languages) for why and how to extend
   that if you need it.
-- **SimplePdf** (`includes/SimplePdf.php`) only supports the core Helvetica
+- **SimplePdf** (`Services\SimplePdf`) only supports the core Helvetica
   fonts via WinAnsiEncoding (~Latin-1/Windows-1252) - it covers English and
   German (and most Western European languages) but not, e.g., Cyrillic,
   Greek, or CJK scripts; unsupported characters get transliterated or

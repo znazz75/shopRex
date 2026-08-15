@@ -2,7 +2,7 @@
 /**
  * English (reference/fallback language - every key used anywhere in the
  * app must exist here; other language files only need to override what
- * they have a translation for, see includes/i18n.php).
+ * they have a translation for, see Services\I18n).
  */
 return [
     '_meta_name' => 'English',

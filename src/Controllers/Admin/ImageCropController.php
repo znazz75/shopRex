@@ -5,11 +5,12 @@ namespace ShopRex\Controllers\Admin;
 use ShopRex\Core\Container;
 use ShopRex\Core\Request;
 use ShopRex\Core\Response;
+use ShopRex\Services\ImageProcessor;
 
 /**
  * Direct port of admin/image_crop.php. Lets an admin crop one product
  * image to a chosen rectangle/target size (e.g. to make a square thumbnail
- * out of a wider photo) using the legacy \ImageProcessor (GD-based) class.
+ * out of a wider photo) using Services\ImageProcessor (GD-based).
  * The crop is saved as a second file alongside the original - the original
  * upload is never overwritten, so re-cropping or reverting is non-destructive.
  */
@@ -48,7 +49,7 @@ final class ImageCropController extends AdminCrudController
         // GD (PHP's image extension) might not be installed on this
         // server - cropping is impossible without it, so this is checked
         // before touching any of the posted coordinates.
-        if (!\ImageProcessor::isSupported()) {
+        if (!ImageProcessor::isSupported()) {
             $errors[] = __('admin.image_crop.gd_unavailable');
         } else {
             // Crop coordinates arrive as the browser's crop-tool
@@ -78,7 +79,7 @@ final class ImageCropController extends AdminCrudController
                     // every crop so browsers never serve a cached copy of
                     // a previous crop under the same URL.
                     $basename = 'product-' . $image['product_id'] . '-' . $image['id'] . '-cropped-' . time();
-                    $newFile = \ImageProcessor::cropAndSave($sourcePath, $x, $y, $w, $h, $targetW, $targetH, $basename);
+                    $newFile = ImageProcessor::cropAndSave($sourcePath, $x, $y, $w, $h, $targetW, $targetH, $basename);
 
                     // Only remove the OLD cropped file after the new one
                     // was successfully written above - avoids ending up

@@ -68,9 +68,10 @@ FlashBag, Session, `Auth/AdminAuth`, `Auth/CustomerAuth`), `Models/`
 MenuItem, Page, `CustomerRequest` abstract base + `WithdrawalRequest`/
 `RmaTicket`, ContactMessage, LegalDocument, ...), `Services/`
 (CategoryTreeService, MenuTreeService, TaxCalculator, DiscountCalculator,
-ShippingCalculator, TranslationOverlay, CheckoutService, InvoiceService,
-Mailer, GdprService, RateLimiter, SettingsRepository, I18n,
-PdfDocumentGenerator, PerPageResolver, ...), `Payment/` (`PaymentGateway`
+ShippingCalculator, TranslationOverlay, CheckoutService, InvoiceGenerator,
+Mailer, SimplePdf, ImageProcessor, GdprService, RateLimiter,
+SettingsRepository, I18n, PdfDocumentGenerator, PerPageResolver, ...),
+`Payment/` (`PaymentGateway`
 interface, `CapturableGateway` interface, PayPal/CreditCard/BankTransfer/
 Invoice/Test implementations, `PaymentGatewayFactory`), `Controllers/
 Storefront/` + `Controllers/Admin/`, `Views/storefront/` + `Views/admin/`
@@ -137,38 +138,43 @@ classes (e.g. `getSetting()` → `Registry::container()->make(SettingsRepository
 Add a new one here rather than reaching into `Registry::container()`
 directly from a view.
 
-**Legacy classes kept as-is** (`includes/Cart.php`, `Mailer.php`,
-`InvoiceGenerator.php`, `SimplePdf.php`, `ImageProcessor.php`,
-`GdprTools.php`, `GdprCleanup.php` — loaded via `require_once` in
-`src/container.php`, see that file's docblock): these
-were already proper, single-purpose classes before the rewrite (not the
-procedural page-level functions the rewrite targeted), so converting them
-to the `ShopRex\` namespace is deferred polish, not a correctness gap.
-`Services\CheckoutService` and the `Payment\*Gateway` classes call their
-existing static entry points (`InvoiceService::generateForOrder()` is a
-thin new wrapper; `Mailer::send()`/`::render()` are called directly).
-`includes/functions.php` is pruned to exactly the handful of functions
-these classes plus the standalone `install.php` (which runs before the
-`src/` autoloader's dependencies are guaranteed to exist) still call —
-`db()`, `e()`, `formatPrice()`, `getSetting()`, CSRF (`csrfField()`/
-`requireCsrf()`/`csrfToken()`/`verifyCsrf()` — a separate implementation
-from `Core\Csrf`, bound to the same `$_SESSION['csrf_token']` key so a
-token from one verifies against the other), `writeInstalledConfigFile()`,
-`redirect()`, and the discount/tax/translation/image helpers `Cart.php`/
-`InvoiceGenerator.php` call directly (`applyProductTranslation()`,
-`getActiveDiscount()`, `getEffectivePrice()`, `vatIsEnabled()`,
-`getTaxRatePercent()`, `formatTaxRateNumber()`, `getPrimaryImage()`). If
-you add a new call site to one of the kept legacy classes, don't
-casually delete a functions.php function that looks unused without
-checking those files too.
+**No `includes/` directory** (v3.00): every class that used to live there
+(`Cart`, `Mailer`, `InvoiceGenerator`, `SimplePdf`, `ImageProcessor`,
+`GdprTools`/`GdprCleanup`, plus the standalone `functions.php`/`i18n.php`
+procedural files) has been ported into the `ShopRex\` namespace under
+`src/Models`/`src/Services` and is reached through the ordinary
+autoloader like everything else — see CHANGELOG.md's `[3.00]` entry for
+the full old-path → new-path mapping. `install.php` is the one deliberate
+exception to "everything goes through `src/`": it still can't use the
+`src/` autoloader/Container, because its whole job (creating
+`config/installed.php` and the database those depend on) has to work
+*before* any of that machinery has anything to connect to — so it keeps
+its own small, self-contained copies of `e()`/the CSRF helpers/
+`redirect()`/`writeInstalledConfigFile()` rather than sharing code (see
+`writeInstalledConfigFile()`'s docblock in both `install.php` and
+`Controllers\Admin\SettingsAdminController` for why that one specifically
+has two independent copies). `includes/lang/*.php` is the only thing
+still under `includes/` — plain language-string data files, not code, see
+the i18n paragraph below.
 
-**i18n** (`includes/i18n.php` + `includes/lang/{en,de,fr}.php`, wrapped by
-`Services\I18n::boot()`/`::t()`/`::current()` etc.): each lang file
-returns a flat `'namespace.key' => 'string'` array (kept in exact key-set
-sync across all three — check with a quick `array_diff` of `array_keys()`
-before considering an i18n change done), `__('key', ['token' => $val])`
-looks up the current language and falls back to English. Two distinct
-language sets matter:
+**No upgrade path from pre-3.00 installs**: this v3.00 cutover removed the
+last remaining `includes/` classes and, with them, the only concrete
+backward-compatibility affordance the app had (three `try/catch` blocks
+tolerating a database that predated the `invoices` table, removed in
+v2.09). There is no migrations system and no version-detection/upgrade
+wizard — `sql/schema.sql` is the single, current-version-only source of
+truth for the schema. A site running an older version must be treated as
+a fresh install (or manually migrated by hand, entirely outside anything
+this codebase provides); see CONTRIBUTING.md's "Versioning" section for
+the policy this establishes going forward from 3.00.
+
+**i18n** (`Services\I18n::boot()`/`::t()`/`::current()`, backed by
+`includes/lang/{en,de,fr}.php`): each lang file returns a flat
+`'namespace.key' => 'string'` array (kept in exact key-set sync across
+all three — check with a quick `array_diff` of `array_keys()` before
+considering an i18n change done), `__('key', ['token' => $val])` looks up
+the current language and falls back to English. Two distinct language
+sets matter:
 - `I18n::availableLanguages()` — every `includes/lang/*.php` file that
   exists on disk.
 - `I18n::enabledLanguages()` — the subset an admin has actually enabled
@@ -181,7 +187,7 @@ language sets matter:
 
 Non-English month names for `formatLocalDate()` are spelled out by hand
 per-language (PHP's `date()` isn't locale-aware) — see the `de`/`fr`
-branches in `includes/i18n.php` for the pattern to follow when adding one.
+branches in `Services\I18n.php` for the pattern to follow when adding one.
 
 **Product/option translation** (`Services\TranslationOverlay`) is a
 separate mechanism from the UI-chrome i18n above: `products`/
@@ -189,10 +195,9 @@ separate mechanism from the UI-chrome i18n above: `products`/
 *default-language* content; every other language lives in a sibling
 `product_translations`/`product_option_translations`/
 `product_option_value_translations` row, overlaid at read time.
-`Cart.php` (kept legacy class) still calls the standalone
-`applyProductTranslation()` function directly rather than the service, to
-re-derive a translated name/description for whatever's already in
-`$_SESSION['cart']` on every read. Because `product_options`/
+`Models\Cart` injects `TranslationOverlay` directly to re-derive a
+translated name/description for whatever's already in `$_SESSION['cart']`
+on every read. Because `product_options`/
 `product_option_values` are fully deleted and recreated on every product
 save (`Controllers\Admin\ProductEditController`), that controller's
 translation inputs for *every* language are always present in the form
@@ -215,9 +220,8 @@ the captured amount matches the order total before marking anything
 paid; don't reintroduce trusting the URL directly, see
 `docs/SECURITY_AUDIT.md` finding #2 for why.
 
-**Cart** (`Models\Cart`, instance-based, held in the `Container`;
-`includes/Cart.php` is the kept-as-is legacy class it wraps/delegates
-to): session-based (`$_SESSION['cart']`), rehydrated from the DB on every
+**Cart** (`Models\Cart`, instance-based, held in the `Container`):
+session-based (`$_SESSION['cart']`), rehydrated from the DB on every
 read so prices/stock are always current. Stock for a product with
 options is tracked per exact combination (`product_variants`/
 `product_variant_values`), not per single option value. When resolving an
@@ -234,12 +238,9 @@ and the dashboard. Created via Admin → Customers → Create Test User.
 
 **Settings** live in the `settings` key/value table, read via
 `Services\SettingsRepository::get($key, $default)` (a single shared
-instance, cache invalidated on write — this fixes the old function-local-static
-`getSetting()`'s same-request staleness gotcha *by construction*; the
-standalone `getSetting()` function kept in `includes/functions.php` for
-the legacy classes still has the old per-request-cache behavior, since
-those classes only ever read settings, never write and immediately
-re-read them in the same request). Not every setting has a seeded row in
+instance, cache invalidated on write — this fixes what used to be a
+function-local-static `getSetting()`'s same-request staleness gotcha *by
+construction*). Not every setting has a seeded row in
 `sql/schema.sql` (e.g. `enabled_languages`, `site_theme_package`,
 `company_legal_name`/`vat_id`/`company_registration_number`) — those use
 `SettingsRepository::upsert()` rather than `::update()` when saving;
@@ -267,10 +268,10 @@ content-sniffed, same posture as product image uploads — see
 
 ## Security posture
 
-CSRF (`Core\Csrf` for the OOP stack; the parallel `csrfField()`/
-`requireCsrf()`/`verifyCsrf()` functions in `includes/functions.php` for
-`install.php` and the kept legacy classes — both read/write the same
-`$_SESSION['csrf_token']` key), prepared statements throughout, bcrypt
+CSRF (`Core\Csrf` for the OOP stack; `install.php` keeps its own small,
+self-contained `csrfField()`/`requireCsrf()`/`verifyCsrf()` copies, since
+it runs before the `src/` autoloader can be used — both read/write the
+same `$_SESSION['csrf_token']` key), prepared statements throughout, bcrypt
 password hashing, session-fixation defenses on login (`Session::regenerate()`
 + `Csrf::rotate()`), and `.htaccess` hardening (CSP + security headers,
 blocked direct access to `config/`/`includes/`/`sql/`/`src/`, blocked PHP

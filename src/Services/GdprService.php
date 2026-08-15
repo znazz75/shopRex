@@ -3,11 +3,11 @@
 namespace ShopRex\Services;
 
 /**
- * Direct port of includes/GdprTools.php (exportData/deleteCustomer) and
- * includes/GdprCleanup.php (runInactivityCleanup) - unlike InvoiceGenerator/
- * Mailer (see src/container.php's docblock on why those stay as-is for
- * now), these two are small and self-contained enough to fully port in
- * this same pass rather than deferring.
+ * Customer-data export/erasure (GDPR "right to access"/"right to
+ * erasure") plus the inactivity-cleanup sweep that automatically erases
+ * long-dormant accounts. Independent, from-scratch reimplementation of
+ * what were originally two separate procedural files - not a thin
+ * wrapper around anything else.
  *
  * Deletion note (preserved from the original docblock): order rows are
  * NOT deleted - shipping_name/address/notes on them are scrubbed, but
@@ -145,7 +145,7 @@ final class GdprService
             // Only marks the customer as warned if the email actually sent -
             // if delivery fails, they'll be picked up again on the next run
             // instead of silently being marked warned with no email received.
-            if (\Mailer::sendAccountDeletionWarning($customer, $deletionDate)) {
+            if (Mailer::sendAccountDeletionWarning($customer, $deletionDate)) {
                 $this->pdo->prepare('UPDATE customers SET deletion_warning_sent_at = NOW() WHERE id = ?')->execute([$customer['id']]);
                 $warned++;
             }

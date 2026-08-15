@@ -8,10 +8,9 @@ use ShopRex\Services\SettingsRepository;
  * Theme *package* resolution (a structurally different storefront layout,
  * not just colors) - byte-for-byte port of getAvailableThemePackages()/
  * getActiveThemePackageKey()/themeTemplatePath()/themeStylesheetTag() from
- * includes/functions.php. The color-accent THEMES const is a separate,
- * much smaller concern and stays as a plain constant read directly by the
- * default theme's header view via the view-helpers shim - not worth its
- * own class.
+ * the original procedural app. The color-accent theme is a separate, much
+ * smaller concern (see getActiveTheme()'s static lookup array in
+ * src/view-helpers.php) - not worth its own class.
  *
  * A theme package's *manifest* (theme.json, discovered by glob) and its
  * *static asset* (style.css, linked directly from HTML) have to stay

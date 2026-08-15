@@ -6,6 +6,7 @@ use ShopRex\Core\Auth\AdminAuth;
 use ShopRex\Core\Container;
 use ShopRex\Core\Request;
 use ShopRex\Core\Response;
+use ShopRex\Services\Mailer;
 
 /**
  * Direct port of admin/orders.php + admin/order_view.php. The admin's
@@ -174,7 +175,7 @@ final class OrderAdminController extends AdminCrudController
         // admin explicitly asked to, so routine/internal-only status
         // tweaks don't spam the customer.
         if ($request->post('notify_customer')) {
-            \Mailer::sendOrderStatusUpdate($order);
+            Mailer::sendOrderStatusUpdate($order);
         }
 
         $this->flash('success', __('admin.order_view.flash_updated'));

@@ -1,25 +1,21 @@
 <?php
 
 /**
- * Tier-2 compatibility shim - thin global-function delegates to the new
- * classes, kept alive ONLY because a handful of legacy view templates are
- * deliberately NOT rewritten (includes/header.php, includes/footer.php,
- * includes/home.php, themes/sidebar/home.php - see Core\Renderer's
- * docblock for why: preserving theme-package fidelity byte-for-byte).
- * Every *business-logic* function has no shim here - it's deleted outright
- * once its one call site (a controller) is ported to the class that
- * replaces it.
- *
- * In plain terms: every view template in this app (old and new) is a plain
- * PHP file that gets `extract()`-into-scope data and then just calls bare
- * global functions like `e($value)` or `getSetting('site_name')` - there's
- * no `$this` or injected object available inside a template. This file is
- * where those bare global functions live; each one is a one-line delegate
- * to the "real" implementation on a proper class (reached via
- * Core\Registry, since a template has no direct reference to the
- * Container). When adding a new helper here, prefer delegating to a real
- * Services/Models class rather than putting actual logic in this file -
- * see CLAUDE.md's "Tier-2 compatibility shim" section.
+ * Tier-2 compatibility shim - thin global-function delegates to the real
+ * Services/Models classes, kept alive as a deliberate, permanent part of
+ * the view-authoring convention (not a migration crutch): every view under
+ * src/Views/ is a plain PHP file that gets `extract()`-into-scope data and
+ * then just calls bare global functions like `e($value)` or
+ * `getSetting('site_name')` - there's no `$this` or injected object
+ * available inside a template, so these bare functions are the only way a
+ * view reaches a real service. This file is where they live; each one is a
+ * one-line delegate to the "real" implementation on a proper class
+ * (reached via Core\Registry, since a template has no direct reference to
+ * the Container). Every *business-logic* function has no shim here - it's
+ * deleted outright once its one call site (a controller) is ported to the
+ * class that replaces it. When adding a new helper here, prefer delegating
+ * to a real Services/Models class rather than putting actual logic in this
+ * file - see CLAUDE.md's "Tier-2 compatibility shim" section.
  *
  * Every function below is wrapped in `if (!function_exists('name'))` so
  * this file can safely be required more than once (or alongside a
@@ -32,6 +28,7 @@ use ShopRex\Core\Csrf;
 use ShopRex\Core\FlashBag;
 use ShopRex\Core\Registry;
 use ShopRex\Core\Renderer;
+use ShopRex\Models\Cart;
 use ShopRex\Services\CategoryTreeService;
 use ShopRex\Services\DiscountCalculator;
 use ShopRex\Services\I18n;
@@ -162,10 +159,10 @@ if (!function_exists('currentCustomer')) {
 
 if (!function_exists('getActiveTheme')) {
     /**
-     * Color-accent theme (THEMES const in includes/functions.php) - a much
-     * smaller, storefront-only concern than ThemeManager's *layout package*
-     * resolution, not worth its own service class; kept as a constant
-     * co-located with this, its only remaining caller.
+     * Color-accent theme - a much smaller, storefront-only concern than
+     * ThemeManager's *layout package* resolution, not worth its own
+     * service class; the lookup table lives as a static local array right
+     * below, co-located with this, its only remaining caller.
      */
     function getActiveTheme(): array
     {
@@ -182,6 +179,14 @@ if (!function_exists('getActiveTheme')) {
         // Fall back to 'default' if the stored setting refers to a color
         // theme key that no longer exists (e.g. removed from this array).
         return $themes[$key] ?? $themes['default'];
+    }
+}
+
+if (!function_exists('getCartItemCount')) {
+    /** Total line-item quantity currently in the visitor's session cart - the small red badge number on the storefront nav's cart icon. */
+    function getCartItemCount(): int
+    {
+        return Registry::container()->make(Cart::class)->count();
     }
 }
 

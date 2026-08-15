@@ -62,7 +62,7 @@ final class I18n
         return self::$availableCache = $languages;
     }
 
-    /** Subset an admin has actually enabled - see includes/i18n.php's getEnabledLanguages() docblock for the full fallback rationale. */
+    /** Subset an admin has actually enabled - see availableLanguages() above for the full fallback rationale this builds on. */
     public static function enabledLanguages(): array
     {
         $available = self::availableLanguages();

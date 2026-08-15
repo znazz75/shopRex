@@ -62,7 +62,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/customers/' . $id;
   </form>
 </div>
 
-<?php /* GDPR (data-protection law) tools for this specific customer - see Services\GdprService / includes/GdprTools.php. Export produces a downloadable copy of everything stored about them; delete permanently erases their personal data (this is the one place a real customer account CAN be deleted from, unlike the simple "block" status above which just locks them out). */ ?>
+<?php /* GDPR (data-protection law) tools for this specific customer - see Services\GdprService. Export produces a downloadable copy of everything stored about them; delete permanently erases their personal data (this is the one place a real customer account CAN be deleted from, unlike the simple "block" status above which just locks them out). */ ?>
 <div class="card">
   <h2 style="margin-top:0;"><?= e(__('admin.customer_view.data_protection')) ?></h2>
   <p style="color:var(--color-muted);font-size:13px;">

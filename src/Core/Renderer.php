@@ -105,8 +105,8 @@ final class Renderer
      * A view with no header/footer wrap at all - for the rare page that
      * renders its own complete <html> document instead of slotting into
      * the normal chrome (Admin -> Login: it must render before an admin
-     * session exists at all, so admin/includes/header.php's sidebar - which
-     * assumes a logged-in admin - can't wrap it).
+     * session exists at all, so src/Views/admin/layout/header.php's
+     * sidebar - which assumes a logged-in admin - can't wrap it).
      */
     public function renderStandalone(string $view, array $data = []): string
     {

@@ -8,6 +8,77 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [3.00] - 2026-08-15
+
+A sanctioned exception to the `+0.01` versioning convention (like v2.00
+before it) - see [CONTRIBUTING.md](CONTRIBUTING.md#versioning). Removes
+every remaining `includes/` class, closing out the "deferred polish" gap
+v2.00's CLAUDE.md explicitly called out at the time.
+
+### Removed
+- **The `includes/` directory no longer contains any PHP class** - only
+  `includes/lang/*.php` (language-string data) is left. Every class that
+  used to live there and was still `require_once`'d as-is has been ported
+  into the `ShopRex\` namespace under `src/Services/` and is now reached
+  through the ordinary autoloader:
+  - `includes/Mailer.php` → `Services\Mailer`
+  - `includes/InvoiceGenerator.php` → `Services\InvoiceGenerator`
+  - `includes/SimplePdf.php` → `Services\SimplePdf`
+  - `includes/ImageProcessor.php` → `Services\ImageProcessor`
+  - `includes/Cart.php` → deleted outright rather than ported -
+    `Models\Cart` (built during the original v2.00 rewrite) already fully
+    replaced it; the one remaining live caller of the old static class
+    (`Cart::count()` in the storefront header's cart badge) was switched
+    to a new `getCartItemCount()` view-helper shim.
+  - `includes/GdprTools.php`/`GdprCleanup.php` → deleted outright -
+    `Services\GdprService` (also already built during v2.00) already
+    independently reimplemented everything in both files; the one
+    remaining caller (`admin/cron/gdpr_cleanup.php`) now boots the real
+    app container and calls `GdprService::runInactivityCleanup()`
+    directly instead of requiring the old files.
+  - `includes/functions.php`/`i18n.php` → deleted - every function they
+    still exported either already had a `src/view-helpers.php` shim
+    (used at runtime by the ported classes above, since none of them
+    ever actually required `functions.php` themselves) or was needed
+    only by `install.php`, which now carries its own small,
+    self-contained copies of `e()`/the CSRF helpers/`redirect()`/
+    `writeInstalledConfigFile()` - it still can't use the rest of the
+    app's classes, since its job is creating the database/config those
+    depend on in the first place.
+- Every call site updated accordingly (`CheckoutService`, `GdprService`,
+  `PdfDocumentGenerator`, and every controller that sends an email or
+  crops an image), and every stale `includes/*.php` reference left behind
+  in `CLAUDE.md`, `README.md`, `README.de.md`, and assorted code
+  docblocks/comments corrected to point at the new locations.
+
+### Changed
+- **No upgrade path from any version before 3.00** - this cutover removed
+  the last concrete backward-compatibility affordance the app had (the
+  three `try/catch` blocks from v2.09). There is no migrations system;
+  `sql/schema.sql` is the current-version-only schema. A pre-3.00 site
+  must be treated as a fresh install. Starting from 3.00, ordinary
+  `+0.01` point releases go back to being the expected, supported
+  upgrade path (as they already were between 2.01 and 2.09) - see
+  [CONTRIBUTING.md](CONTRIBUTING.md#versioning) for the full policy.
+
+### Verified
+- `php -l` on all 34 touched/added PHP files.
+- A live, isolated fresh-install run through `install.php`'s full 3-step
+  wizard (requirements check → database setup → admin account creation),
+  confirming its now-self-contained CSRF/`e()`/`writeInstalledConfigFile()`
+  copies work exactly as before.
+- A real end-to-end checkout (add to cart → place a bank-transfer order)
+  through the live HTTP front controller, confirming `Services\InvoiceGenerator`
+  generated and saved a PDF and `Services\Mailer` rendered, logged, and
+  attempted to send the order confirmation email - both via the real
+  `Services\CheckoutService` call path, not a simulation.
+- The storefront cart badge (`getCartItemCount()`) reflecting a real
+  added item.
+- `admin/cron/gdpr_cleanup.php` running successfully end-to-end through
+  the real app container.
+- A full storefront + admin route sweep and an Apache error-log check,
+  both clean.
+
 ## [2.09] - 2026-08-15
 
 ### Removed

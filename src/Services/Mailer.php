@@ -1,27 +1,26 @@
 <?php
+
+namespace ShopRex\Services;
+
 /**
  * Mailer with editable, multi-language templates.
  *
  * Every email is: {{_header}} + body_html (from email_templates, with
  * {{token}} substitution) + {{_footer}}. Header/footer and every
  * template's subject/body are editable in Admin -> Email Templates
- * (admin/email_templates.php) per language, with English as the fallback
- * whenever a language has no override for a given key.
+ * per language, with English as the fallback whenever a language has no
+ * override for a given key.
  *
  * Uses PHP's built-in mail() out of the box so the framework has zero
  * required dependencies. For real-world delivery (Gmail/SendGrid/Mailgun/
  * etc.) swap the transport in deliver() for SMTP - see README.md. Every
  * attempt (success or failure) is written to the email_log table.
  *
- * Why this class still exists as-is: one of the "legacy classes kept
- * as-is" (see CLAUDE.md) - it was already a proper, single-purpose class
- * before the OOP rewrite, so it's `require_once`'d as-is from
- * src/container.php rather than ported into the ShopRex\ namespace.
- * `Services\CheckoutService` and other new src/ code call these
- * send*()/render() static entry points directly, unchanged.
+ * Static-methods-only by design (no per-request state, same as
+ * Support\Slugger/Pagination) - CheckoutService and every controller that
+ * sends an email call these send*()/render() entry points directly.
  */
-
-class Mailer
+final class Mailer
 {
     /**
      * Raw send + log. Prefer the send*() convenience methods below, which
@@ -92,7 +91,7 @@ class Mailer
                 $success = @mail($to, $subject, $htmlBody, implode("\r\n", $headers));
             }
             $error = $success ? null : 'mail() returned false (no local MTA configured?)';
-        } catch (Throwable $e) {
+        } catch (\Throwable $e) {
             // mail() itself doesn't normally throw, but file_get_contents()
             // on a missing/unreadable attachment could - catch broadly so a
             // bad attachment never turns into an uncaught fatal error.
@@ -332,7 +331,7 @@ class Mailer
         return self::send($customer['email'], $rendered['subject'], $rendered['html'], 'password_reset');
     }
 
-    /** Sends the GDPR inactivity-deletion warning email (see includes/GdprCleanup.php) telling a customer their account will be erased on $deletionDate unless they log back in. */
+    /** Sends the GDPR inactivity-deletion warning email (see Services\GdprService::runInactivityCleanup()) telling a customer their account will be erased on $deletionDate unless they log back in. */
     public static function sendAccountDeletionWarning(array $customer, string $deletionDate): bool
     {
         $rendered = self::render('account_deletion_warning', $customer['language'] ?? 'en', [

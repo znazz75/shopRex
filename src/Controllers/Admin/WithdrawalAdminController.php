@@ -7,6 +7,7 @@ use ShopRex\Core\Request;
 use ShopRex\Core\Response;
 use ShopRex\Models\WithdrawalRequest;
 use ShopRex\Services\I18n;
+use ShopRex\Services\Mailer;
 
 /**
  * New in v2.00 - admin review queue for Controllers\Storefront\WithdrawalController's
@@ -126,12 +127,12 @@ final class WithdrawalAdminController extends AdminCrudController
         // e() escapes each value for safe HTML output, nl2br() turns the
         // admin's typed line breaks into <br> tags - both needed since
         // these values get interpolated into an HTML email template.
-        $rendered = \Mailer::render($templateKey, $lang, [
+        $rendered = Mailer::render($templateKey, $lang, [
             'customer_name' => e($order['customer_first_name'] ?? ''),
             'order_number'  => e($order['order_number']),
             'admin_notes'   => nl2br(e($adminNotes)),
         ]);
-        \Mailer::send($order['customer_email'], $rendered['subject'], $rendered['html'], $templateKey, (int)$order['id']);
+        Mailer::send($order['customer_email'], $rendered['subject'], $rendered['html'], $templateKey, (int)$order['id']);
     }
 
     /** Looks up one order (with customer/guest email + name) by ID - used both to build the show() page and to address the notification email. */

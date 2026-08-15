@@ -1,24 +1,25 @@
 <?php
+
+namespace ShopRex\Services;
+
 /**
  * Builds a VAT-aware PDF invoice for an order, in the order's language.
  * Saved under uploads/invoices/ (never directly web-accessible - see
- * uploads/invoices/.htaccess - always served through invoice_download.php,
- * which checks the requester owns the order or is an admin).
+ * uploads/invoices/.htaccess - always served through the storefront's
+ * /order/{orderNumber}/invoice route, which checks the requester owns the
+ * order or is an admin).
  *
- * Why this class still exists as-is: one of the "legacy classes kept
- * as-is" (see CLAUDE.md) - it was already a proper, single-purpose class
- * before the OOP rewrite, so it's `require_once`'d as-is from
- * src/container.php rather than ported into the ShopRex\ namespace.
- * `Services\InvoiceService::generateForOrder()` is a thin new wrapper
- * around this exact method - callers in the new src/ code go through that
- * wrapper rather than calling InvoiceGenerator directly.
+ * Draws the PDF by hand via Services\SimplePdf's low-level text/line
+ * primitives rather than a templating layer, since the layout is simple
+ * and fixed (one page style, no variable page count beyond overflow
+ * pagination) - see SimplePdf's own docblock for what it can/can't render.
  *
  * Invoice label translations (see LABELS) cover all three of the shop's
  * languages (EN/DE/FR); an order placed in some other/disabled language
  * falls back to English invoice text via the in_array() check in
  * generateForOrder().
  */
-class InvoiceGenerator
+final class InvoiceGenerator
 {
     // Every fixed label the PDF layout needs, per supported invoice
     // language - looked up as $t['key'] throughout generateForOrder()

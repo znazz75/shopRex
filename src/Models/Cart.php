@@ -9,23 +9,13 @@ use ShopRex\Services\TaxCalculator;
 use ShopRex\Services\TranslationOverlay;
 
 /**
- * Session-based shopping cart - direct, method-for-method port of
- * includes/Cart.php, converted from a static-only class to a request-
- * scoped instance (held as a Container singleton, so every controller in
- * one request shares the same Cart object) backed by the Session wrapper
- * instead of touching $_SESSION['cart'] directly. This closes the two
- * encapsulation breaks the original cart_action.php had (reading/writing
- * $_SESSION['cart'] directly at lines 53/97 instead of going through the
- * Cart class) - Controllers\Storefront\CartController never touches
- * $_SESSION itself, only this class's API.
- *
- * includes/Cart.php's original static `Cart` class is deliberately left
- * completely untouched and still active for the legacy app (still-live
- * cart.php/cart_action.php, and includes/header.php's `Cart::count()`
- * call, which is not rewritten - see Core\Renderer's docblock). Both
- * implementations read/write the exact same $_SESSION['cart'] structure
- * independently, so a cart built via either code path stays consistent
- * during the migration - no bridging/delegation needed between them.
+ * Session-based shopping cart - a request-scoped instance (held as a
+ * Container singleton, so every controller in one request shares the same
+ * Cart object) backed by the Session wrapper instead of touching
+ * $_SESSION['cart'] directly. Every read/write to the cart in the app goes
+ * through this one class's API - Controllers\Storefront\CartController and
+ * the getCartItemCount() view-helper shim (used by the storefront nav's
+ * cart badge) never touch $_SESSION itself.
  *
  * SECURITY (see docs/SECURITY_AUDIT.md finding #1): every per-option-value
  * lookup in getItems() below is scoped by `po.product_id = ?` - do not

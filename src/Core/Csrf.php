@@ -3,9 +3,12 @@
 namespace ShopRex\Core;
 
 /**
- * Direct port of the csrfToken()/csrfField()/verifyCsrf()/requireCsrf()
- * functions from includes/functions.php - logic unchanged (including the
- * hash_equals('', '') footgun comment below), just relocated onto a class.
+ * CSRF protection for the whole app, except install.php - which keeps its
+ * own small, self-contained csrfToken()/csrfField()/verifyCsrf()/
+ * requireCsrf() copies (including the same hash_equals('', '') footgun
+ * guard as here), since it runs before this class's autoloader/Container
+ * dependencies can be used. Both read/write the same session key, so a
+ * token from one still verifies against the other.
  *
  * In plain terms: CSRF (Cross-Site Request Forgery) protection stops another
  * website from tricking a logged-in user's browser into submitting a form on
@@ -14,9 +17,8 @@ namespace ShopRex\Core;
  * The fix is a secret, unpredictable token embedded in every form; the
  * attacker's page can't know that token, so a forged submission fails the
  * check in verify(). This class exists as its own small class (rather than
- * being folded into Session) so every place that needs CSRF handling
- * (both the OOP controllers and the legacy includes/functions.php shim) can
- * share exactly one implementation and one session key.
+ * being folded into Session) so every OOP controller shares exactly one
+ * implementation and one session key.
  */
 final class Csrf
 {

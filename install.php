@@ -13,19 +13,103 @@
  * the ShopRex\ autoloader, etc.) because its whole job - creating
  * config/installed.php and the database those depend on - has to work
  * *before* any of that machinery has anything to connect to. That's why
- * it require_once's includes/functions.php directly (for db(), e(),
- * csrfField()/verifyCsrf()/requireCsrf(), getSetting(), redirect(),
- * writeInstalledConfigFile()) instead of going through
- * src/bootstrap.php/Container like every other page in the app, and why
- * this single file mixes PHP request-handling logic with its own inline
- * HTML template at the bottom rather than using Core\Renderer/a Views file
- * (again: those depend on the app already being installed). See
- * includes/functions.php's own docblock for the short list of helpers it
- * keeps around specifically so this file (and the "legacy classes kept
- * as-is") can still call them pre-installation.
+ * this file is fully self-contained: e()/redirect()/the CSRF helpers/
+ * writeInstalledConfigFile() below are small, deliberately duplicated
+ * copies of the same-named functions elsewhere in the app (e()/CSRF handling
+ * live on Core\Csrf and the view-helpers.php shim for everything else;
+ * writeInstalledConfigFile() has an equivalent private method on
+ * Controllers\Admin\SettingsAdminController for the "change site URL"
+ * admin feature) rather than shared code, since nothing in src/ can be
+ * safely required this early. This is also why this single file mixes PHP
+ * request-handling logic with its own inline HTML template at the bottom
+ * rather than using Core\Renderer/a Views file (again: those depend on the
+ * app already being installed).
  */
 require_once __DIR__ . '/config/config.php';
-require_once __DIR__ . '/includes/functions.php';
+
+/** HTML-escapes $value for safe output in this file's inline template (prevents XSS from any value that ultimately came from user input) - null-safe, so `e($maybeNullValue)` never warns. */
+function e(?string $value): string
+{
+    return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
+}
+
+/** Used by this file only - every other page redirects via Core\Response::redirect(). */
+function redirect(string $path): void
+{
+    header('Location: ' . $path);
+    exit;
+}
+
+// ---------------------------------------------------------------
+// CSRF protection - this file only (every other page's CSRF handling goes
+// through Core\Csrf, a separate, unrelated implementation bound to the
+// same $_SESSION['csrf_token'] key so a token from one still verifies
+// against the other during the brief window this installer can still run).
+// ---------------------------------------------------------------
+
+/** Returns the current session's CSRF token, generating and storing a fresh cryptographically-random one the first time it's needed. */
+function csrfToken(): string
+{
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+/** Renders the hidden form field this file's <form>s embed so their POST submission carries the CSRF token back for verifyCsrf()/requireCsrf() to check. */
+function csrfField(): string
+{
+    return '<input type="hidden" name="csrf_token" value="' . e(csrfToken()) . '">';
+}
+
+/** True if the current POST request's csrf_token field matches this session's expected token - this file's guard against cross-site request forgery on its setup forms. */
+function verifyCsrf(): bool
+{
+    $token = $_POST['csrf_token'] ?? '';
+    $sessionToken = $_SESSION['csrf_token'] ?? '';
+    // Both sides must be a non-empty string before comparing - hash_equals('', '')
+    // returns true, which would let a forged request with no token field pass
+    // whenever the victim's session happens not to have generated one yet.
+    // hash_equals() itself (rather than ===) is used for a timing-safe
+    // comparison, so an attacker can't guess the token one byte at a time
+    // by measuring how long the comparison takes to fail.
+    return is_string($token) && $token !== '' && $sessionToken !== '' && hash_equals($sessionToken, $token);
+}
+
+/** Enforces verifyCsrf(), immediately halting the request with a 403 response if the check fails - call this at the top of any POST handler below. */
+function requireCsrf(): void
+{
+    if (!verifyCsrf()) {
+        http_response_code(403);
+        die('Invalid or expired form submission (CSRF check failed). Please go back and try again.');
+    }
+}
+
+/**
+ * (Re)writes config/installed.php - the DB credentials + Site URL that
+ * make up an installed site. Admin -> Settings' equivalent is
+ * Controllers\Admin\SettingsAdminController::writeInstalledConfigFile(), a
+ * byte-for-byte copy of this same function - kept separate rather than
+ * shared, since this file runs before the src/ autoloader's dependencies
+ * (config/database.php, a DB connection) are guaranteed to exist.
+ */
+function writeInstalledConfigFile(string $host, string $port, string $name, string $user, string $pass, string $siteUrl): bool
+{
+    // var_export() turns each value into valid PHP source representing
+    // that exact string (with correct quoting/escaping), so the generated
+    // file is safe to write even if e.g. the DB password contains a quote
+    // character.
+    $content = "<?php\n"
+        . "// Generated by install.php / Admin -> Settings on " . date('c') . ".\n"
+        . "// Contains your database password - keep this file private (already in .gitignore).\n"
+        . "define('DB_HOST', " . var_export($host, true) . ");\n"
+        . "define('DB_PORT', " . var_export($port, true) . ");\n"
+        . "define('DB_NAME', " . var_export($name, true) . ");\n"
+        . "define('DB_USER', " . var_export($user, true) . ");\n"
+        . "define('DB_PASS', " . var_export($pass, true) . ");\n"
+        . "define('SITE_URL', " . var_export(rtrim($siteUrl, '/'), true) . ");\n";
+    return file_put_contents(SHOPREX_INSTALLED_FILE, $content) !== false;
+}
 
 /**
  * True once config/installed.php exists AND at least one admin account
@@ -170,7 +254,7 @@ function runSqlFile(PDO $pdo, string $path): array
 // ---------------------------------------------------------------
 if ($step === 'database' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // Halts the request with a 403 if the submitted csrf_token doesn't
-    // match this session's - see includes/functions.php's requireCsrf().
+    // match this session's - see requireCsrf() above.
     requireCsrf();
 
     $host = trim($_POST['db_host'] ?? '');

@@ -40,32 +40,13 @@ use ShopRex\Models\Cart;
 use ShopRex\Payment\PaymentGatewayFactory;
 use ShopRex\Payment\PaymentSettings;
 
-// includes/Cart.php is deliberately still loaded as-is (global, unnamespaced
-// `Cart` static class) rather than ported yet - includes/header.php calls
-// the unqualified `Cart::count()` directly and is one of the templates
-// intentionally NOT rewritten (see Core\Renderer's docblock), so that exact
-// call must keep resolving. Phase 3 replaces the *internals* this delegates
-// to (session-backed instance behind Models\Cart) without changing that
-// header.php call site at all.
-require_once dirname(__DIR__) . '/includes/Cart.php';
-
-// includes/SimplePdf.php / InvoiceGenerator.php / Mailer.php are likewise
-// loaded as-is (global, unnamespaced classes) rather than ported to
-// Services\* in this pass - they're already proper classes (not the
-// procedural functions the OOP rewrite targets), and Services\CheckoutService
-// (Phase 4) only ever calls their existing static entry points
-// (InvoiceGenerator::generateForOrder(), Mailer::sendOrderConfirmation()).
-// Converting them to constructor-injected instances is worthwhile future
-// polish, deliberately deferred rather than done under Phase 4's already-
-// high-risk scope - tracked for the Phase 6 pass that extends Mailer with
-// new templates anyway (contact form, withdrawal, RMA).
-require_once dirname(__DIR__) . '/includes/SimplePdf.php';
-require_once dirname(__DIR__) . '/includes/InvoiceGenerator.php';
-require_once dirname(__DIR__) . '/includes/Mailer.php';
-// Same deferred-conversion rationale as the three above - Controllers\Admin\ImageCropController
-// (Phase 8, direct port of admin/image_crop.php) calls its existing static
-// ImageProcessor::isSupported()/cropAndSave() entry points unchanged.
-require_once dirname(__DIR__) . '/includes/ImageProcessor.php';
+// v3.00: every class that used to live under includes/ (Cart, SimplePdf,
+// InvoiceGenerator, Mailer, ImageProcessor, GdprTools/GdprCleanup) has been
+// ported into the ShopRex\ namespace under src/ and is now reached through
+// the ordinary spl_autoload_register autoloader (src/bootstrap.php) like
+// everything else - no more manual require_once calls needed here. The
+// includes/ directory itself no longer exists (see CHANGELOG.md's v3.00
+// entry for the full list of what moved where).
 
 return function (bool $isAdmin = false): Container {
     $container = new Container();

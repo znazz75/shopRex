@@ -110,12 +110,12 @@ $availableLangs = getEnabledLanguages(); // Only admin-enabled languages - the l
           <li class="nav-item">
             <a class="nav-link position-relative" href="<?= rtrim(SITE_URL, '/') ?>/cart">
               <i class="bi bi-cart3 fs-5"></i>
-              <?php // Cart::count() (the legacy includes/Cart.php class, kept
-                    // as-is - see CLAUDE.md's "Legacy classes kept as-is")
-                    // sums line-item quantities from $_SESSION['cart']; only
-                    // show the little red badge once there's at least 1 item. ?>
-              <?php if (Cart::count() > 0): ?>
-                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"><?= Cart::count() ?></span>
+              <?php // getCartItemCount() sums line-item quantities from
+                    // the session cart (Models\Cart); only show the little
+                    // red badge once there's at least 1 item. ?>
+              <?php $cartItemCount = getCartItemCount(); ?>
+              <?php if ($cartItemCount > 0): ?>
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"><?= $cartItemCount ?></span>
               <?php endif; ?>
             </a>
           </li>
