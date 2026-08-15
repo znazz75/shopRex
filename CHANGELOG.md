@@ -8,6 +8,30 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [2.03] - 2026-08-15
+
+### Fixed
+- A full sweep for links the v2.00 cutover missed (beyond `install.php`'s,
+  fixed in 2.02):
+  - The seeded "Home" and "Contact" menu items (`sql/schema.sql`, and the
+    already-installed database) pointed at `index.php`/`contact.php`
+    instead of `/`/`contact` - every fresh install's default nav "Home"
+    link 404'd.
+  - `PayPalGateway`/`CreditCardGateway`'s `cancel_url` still pointed at
+    `/checkout.php?cancelled=1` - cancelling a PayPal or Stripe payment
+    and being sent back to the shop hit a 404 instead of the cart.
+  - Three admin-facing help strings (all three languages) still described
+    the old URL shapes: the Pages slug hint (`/page.php?slug=...` instead
+    of `/page/...`), the "test user created" message (`/login.php`
+    instead of `/login`), and the custom menu-link URL field's example
+    (`index.php`, which - per `MenuTreeService::resolveUrl()` - actually
+    resolves to `/index.php` and 404s; now suggests a blank value for the
+    homepage instead).
+  - `includes/PaymentGateway.php` (the pre-rewrite payment class) still
+    has the same stale paths internally, but is confirmed dead code -
+    nothing `require`s it since `src/Payment/*` took over - so it was left
+    alone rather than edited for its own sake.
+
 ## [2.02] - 2026-08-15
 
 ### Fixed

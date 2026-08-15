@@ -435,7 +435,7 @@ return [
 
     // ---- Admin: customers ----
     'admin.customers.name_required'   => 'Please enter a first and last name for the test user.',
-    'admin.customers.test_user_created' => 'Test user "{email}" created. They can log in at /login.php with the password you set.',
+    'admin.customers.test_user_created' => 'Test user "{email}" created. They can log in at /login with the password you set.',
     'admin.customers.create_test_user'   => 'Create Test User',
     'admin.customers.test_user_hint'      => 'For trial runs: orders placed while logged in as this account use a simulated payment (no real gateway call, no real money moves), are never counted against real stock, and are excluded from every financial report.',
     'admin.customers.search_placeholder'   => 'Search by name or email...',
@@ -650,7 +650,7 @@ return [
     'admin.pages.edit_title'           => 'Edit Page',
     'admin.pages.add_title'             => 'Add Page',
     'admin.pages.title_label'            => 'Title',
-    'admin.pages.slug_label'              => 'Slug (used in the URL: /page.php?slug=...)',
+    'admin.pages.slug_label'              => 'Slug (used in the URL: /page/...)',
     'admin.pages.system_page_hint'         => 'System page - slug is shared across languages and locked.',
     'admin.pages.content'                   => 'Content',
     'admin.pages.save'                       => 'Save Page',
@@ -683,7 +683,7 @@ return [
     'admin.menus.link_type'                                   => 'Link type',
     'admin.menus.custom_url'                                   => 'Custom URL',
     'admin.menus.parent_item'                                   => 'Parent item (optional, creates a dropdown/submenu)',
-    'admin.menus.url_label'                                      => 'URL (e.g. index.php, https://example.com, or a relative path)',
+    'admin.menus.url_label'                                      => 'URL (leave blank for the homepage, or use e.g. contact, https://example.com, or a relative path)',
     'admin.menus.open_new_tab'                                    => 'Open in new tab',
     'admin.menus.active_visible'                                   => 'Active (visible on the site)',
     'admin.menus.save'                                              => 'Save Menu Item',

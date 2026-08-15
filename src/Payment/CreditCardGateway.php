@@ -21,7 +21,7 @@ final class CreditCardGateway implements PaymentGateway, CapturableGateway
         $fields = [
             'mode' => 'payment',
             'success_url' => rtrim(SITE_URL, '/') . '/checkout/capture?gateway=credit_card&order=' . $order['order_number'] . '&action=capture&session_id={CHECKOUT_SESSION_ID}',
-            'cancel_url' => rtrim(SITE_URL, '/') . '/checkout.php?cancelled=1',
+            'cancel_url' => rtrim(SITE_URL, '/') . '/checkout?cancelled=1',
             'customer_email' => $order['guest_email'] ?? $order['customer_email'] ?? '',
         ];
 

@@ -434,7 +434,7 @@ return [
 
     // ---- Admin: customers ----
     'admin.customers.name_required'   => "Veuillez saisir un prénom et un nom pour l'utilisateur de test.",
-    'admin.customers.test_user_created' => 'Utilisateur de test « {email} » créé. Il peut se connecter sur /login.php avec le mot de passe défini.',
+    'admin.customers.test_user_created' => 'Utilisateur de test « {email} » créé. Il peut se connecter sur /login avec le mot de passe défini.',
     'admin.customers.create_test_user'   => 'Créer un utilisateur de test',
     'admin.customers.test_user_hint'      => "Pour des essais : les commandes passées en étant connecté avec ce compte utilisent un paiement simulé (aucun appel réel à la passerelle, aucun mouvement d'argent réel), ne sont jamais comptabilisées dans le stock réel, et sont exclues de tous les rapports financiers.",
     'admin.customers.search_placeholder'   => 'Rechercher par nom ou e-mail...',
@@ -645,7 +645,7 @@ return [
     'admin.pages.edit_title'           => 'Modifier la page',
     'admin.pages.add_title'             => 'Ajouter une page',
     'admin.pages.title_label'            => 'Titre',
-    'admin.pages.slug_label'              => 'Slug (utilisé dans l\'URL : /page.php?slug=...)',
+    'admin.pages.slug_label'              => 'Slug (utilisé dans l\'URL : /page/...)',
     'admin.pages.system_page_hint'         => 'Page système - le slug est partagé entre les langues et verrouillé.',
     'admin.pages.content'                   => 'Contenu',
     'admin.pages.save'                       => 'Enregistrer la page',
@@ -678,7 +678,7 @@ return [
     'admin.menus.link_type'                                   => 'Type de lien',
     'admin.menus.custom_url'                                   => 'URL personnalisée',
     'admin.menus.parent_item'                                   => 'Élément parent (facultatif, crée un menu déroulant/sous-menu)',
-    'admin.menus.url_label'                                      => 'URL (ex. index.php, https://exemple.com, ou un chemin relatif)',
+    'admin.menus.url_label'                                      => 'URL (laisser vide pour la page d\'accueil, ou ex. contact, https://exemple.com, ou un chemin relatif)',
     'admin.menus.open_new_tab'                                    => 'Ouvrir dans un nouvel onglet',
     'admin.menus.active_visible'                                   => 'Actif (visible sur le site)',
     'admin.menus.save'                                              => "Enregistrer l'élément de menu",

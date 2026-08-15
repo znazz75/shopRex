@@ -751,14 +751,14 @@ CREATE TABLE menu_items (
 ) ENGINE=InnoDB;
 
 INSERT INTO menu_items (location, label, link_type, link_value, sort_order) VALUES
-    ('main', 'Home', 'custom', 'index.php', 1),
+    ('main', 'Home', 'custom', '', 1),
     ('main', 'About Us', 'page', 'about-us', 2),
     ('footer', 'About Us', 'page', 'about-us', 1),
     ('footer', 'Legal Notice', 'page', 'legal-notice', 2),
     ('footer', 'Privacy Policy', 'page', 'privacy-policy', 3),
     ('footer', 'Copyright', 'page', 'copyright', 4),
     -- v2.00 additions - see the tables/seed data below.
-    ('footer', 'Contact', 'custom', 'contact.php', 5),
+    ('footer', 'Contact', 'custom', 'contact', 5),
     ('footer', 'Terms & Conditions', 'page', 'terms-conditions', 6),
     ('footer', 'Right of Withdrawal', 'page', 'right-of-withdrawal', 7);
 

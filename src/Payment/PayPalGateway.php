@@ -58,7 +58,7 @@ final class PayPalGateway implements PaymentGateway, CapturableGateway
             ]],
             'application_context' => [
                 'return_url' => rtrim(SITE_URL, '/') . '/checkout/capture?gateway=paypal&order=' . $order['order_number'] . '&action=capture',
-                'cancel_url' => rtrim(SITE_URL, '/') . '/checkout.php?cancelled=1',
+                'cancel_url' => rtrim(SITE_URL, '/') . '/checkout?cancelled=1',
             ],
         ];
 

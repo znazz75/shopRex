@@ -434,7 +434,7 @@ return [
 
     // ---- Admin: customers ----
     'admin.customers.name_required'   => 'Bitte geben Sie Vor- und Nachname für den Testbenutzer ein.',
-    'admin.customers.test_user_created' => 'Testbenutzer „{email}“ erstellt. Anmeldung ist unter /login.php mit dem festgelegten Passwort möglich.',
+    'admin.customers.test_user_created' => 'Testbenutzer „{email}“ erstellt. Anmeldung ist unter /login mit dem festgelegten Passwort möglich.',
     'admin.customers.create_test_user'   => 'Testbenutzer erstellen',
     'admin.customers.test_user_hint'      => 'Für Testläufe: Bestellungen, die mit diesem Konto aufgegeben werden, verwenden eine simulierte Zahlung (kein echter Gateway-Aufruf, es bewegt sich kein echtes Geld), werden nie vom echten Lagerbestand abgezogen und sind von jedem Finanzbericht ausgeschlossen.',
     'admin.customers.search_placeholder'   => 'Nach Name oder E-Mail suchen...',
@@ -645,7 +645,7 @@ return [
     'admin.pages.edit_title'           => 'Seite bearbeiten',
     'admin.pages.add_title'             => 'Seite hinzufügen',
     'admin.pages.title_label'            => 'Titel',
-    'admin.pages.slug_label'              => 'Slug (verwendet in der URL: /page.php?slug=...)',
+    'admin.pages.slug_label'              => 'Slug (verwendet in der URL: /page/...)',
     'admin.pages.system_page_hint'         => 'Systemseite - der Slug gilt sprachübergreifend und ist gesperrt.',
     'admin.pages.content'                   => 'Inhalt',
     'admin.pages.save'                       => 'Seite speichern',
@@ -678,7 +678,7 @@ return [
     'admin.menus.link_type'                                   => 'Linktyp',
     'admin.menus.custom_url'                                   => 'Benutzerdefinierte URL',
     'admin.menus.parent_item'                                   => 'Übergeordnetes Element (optional, erzeugt ein Dropdown/Untermenü)',
-    'admin.menus.url_label'                                      => 'URL (z. B. index.php, https://example.com, oder ein relativer Pfad)',
+    'admin.menus.url_label'                                      => 'URL (leer lassen für die Startseite, oder z. B. contact, https://example.com, oder ein relativer Pfad)',
     'admin.menus.open_new_tab'                                    => 'In neuem Tab öffnen',
     'admin.menus.active_visible'                                   => 'Aktiv (auf der Seite sichtbar)',
     'admin.menus.save'                                              => 'Menüpunkt speichern',
