@@ -19,12 +19,16 @@ namespace ShopRex\Services;
  */
 final class SettingsRepository
 {
+    // In-memory copy of the whole `settings` table, keyed by setting_key; null
+    // means "not loaded yet this request". Set back to null by invalidate() so
+    // the next get() re-reads from the database.
     private ?array $cache = null;
 
     public function __construct(private readonly \PDO $pdo)
     {
     }
 
+    /** Reads one setting by its key (e.g. "site_name"), falling back to $default when no row exists for it. */
     public function get(string $key, ?string $default = null): ?string
     {
         $this->loadIfNeeded();
@@ -47,8 +51,11 @@ final class SettingsRepository
         $this->invalidate();
     }
 
+    /** Checks the admin-configurable on/off switch for one payment method at checkout; unknown method names are treated as disabled (default => false) rather than erroring. */
     public function isPaymentMethodEnabled(string $method): bool
     {
+        // Each gateway defaults to '1' (enabled) if the admin never touched
+        // the setting, so a fresh install works out of the box.
         return match ($method) {
             'paypal'        => $this->get('payment_method_paypal_enabled', '1') === '1',
             'credit_card'   => $this->get('payment_method_credit_card_enabled', '1') === '1',
@@ -57,11 +64,13 @@ final class SettingsRepository
         };
     }
 
+    /** Whether this customer is allowed to place an order on "pay by invoice" terms - a per-customer flag an admin grants manually (e.g. for trusted B2B accounts), not a global setting. */
     public function customerCanPayOnInvoice(?array $customer): bool
     {
         return $customer !== null && !empty($customer['can_pay_on_invoice']);
     }
 
+    /** Populates $cache from the database the first time it's needed in this request, then leaves it alone - this is what makes get() cheap to call repeatedly. */
     private function loadIfNeeded(): void
     {
         if ($this->cache !== null) {
@@ -73,6 +82,7 @@ final class SettingsRepository
         }
     }
 
+    /** Forgets the in-memory cache so the next get() reloads fresh values from the database - called after every write so this request immediately sees its own changes (see class docblock). */
     private function invalidate(): void
     {
         $this->cache = null;

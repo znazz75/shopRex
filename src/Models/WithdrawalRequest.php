@@ -15,9 +15,15 @@ class WithdrawalRequest extends CustomerRequest
 {
     protected static string $table = 'withdrawal_requests';
 
+    // Free-text reason the customer gave, if any - EU/German withdrawal law
+    // doesn't require a reason to be given at all, so this is optional context only.
     public ?string $reason = null;
+    // The computed cutoff date/time after which this order can no longer be
+    // withdrawn from - snapshotted once at creation (see calculateDeadline()'s
+    // docblock) rather than recalculated on every check.
     public ?string $deadlineAt = null;
 
+    /** Finds the (at most one) withdrawal request already filed for a given order - since an order can only have a single withdrawal request in this model, unlike RmaTicket which is per line item and can have several. */
     public static function findByOrder(int $orderId): ?self
     {
         $stmt = static::pdo()->prepare('SELECT * FROM withdrawal_requests WHERE order_id = ?');
@@ -37,12 +43,21 @@ class WithdrawalRequest extends CustomerRequest
      */
     public static function calculateDeadline(Order $order, SettingsRepository $settings): \DateTimeImmutable
     {
+        // Starting point: when the order actually shipped, or - if it
+        // hasn't shipped yet somehow - when it was placed, or (last resort)
+        // right now. shippedAt is preferred since the legal clock is meant
+        // to track delivery, not purchase.
         $base = new \DateTimeImmutable($order->shippedAt ?? $order->createdAt ?? 'now');
         $deliveryDays = (int)$settings->get('assumed_delivery_days_after_shipment', '3');
         $withdrawalDays = (int)$settings->get('withdrawal_period_days', '14');
+        // Two separate ->modify() calls (rather than adding the days
+        // together first) so it's clear these are two distinct legal
+        // periods being stacked: an assumed transit time, then the
+        // statutory withdrawal window on top of that.
         return $base->modify("+{$deliveryDays} days")->modify("+{$withdrawalDays} days");
     }
 
+    /** Whether the withdrawal deadline has already passed - a request with no deadline recorded (shouldn't normally happen once created via createFor()) is treated as NOT past deadline rather than blocking it. */
     public function isPastDeadline(): bool
     {
         if (!$this->deadlineAt) {
@@ -60,8 +75,15 @@ class WithdrawalRequest extends CustomerRequest
      */
     public static function createFor(Order $order, ?array $customer, string $reason, array $orderItemIds, \PDO $pdo, SettingsRepository $settings): self
     {
+        // The deadline is computed and stored once here, at submission time
+        // - not recalculated later from live settings - so a subsequent
+        // change to the withdrawal_period_days/assumed_delivery_days
+        // setting can't retroactively move an already-filed request's deadline.
         $deadline = self::calculateDeadline($order, $settings);
 
+        // Both the parent request row and its per-item rows must be written
+        // together - a transaction guarantees a request is never left with
+        // zero items (or items without a parent request) if something fails midway.
         $pdo->beginTransaction();
         try {
             $stmt = $pdo->prepare(
@@ -70,6 +92,9 @@ class WithdrawalRequest extends CustomerRequest
             $stmt->execute([$order->id, $customer['id'] ?? null, $reason !== '' ? $reason : null, $deadline->format('Y-m-d H:i:s')]);
             $id = (int)$pdo->lastInsertId();
 
+            // One row per covered order item - this is what lets a
+            // withdrawal cover only SOME of an order's items (e.g.
+            // excluding a hygiene-flagged product) rather than being all-or-nothing.
             $itemStmt = $pdo->prepare('INSERT INTO withdrawal_request_items (withdrawal_request_id, order_item_id) VALUES (?, ?)');
             foreach ($orderItemIds as $orderItemId) {
                 $itemStmt->execute([$id, $orderItemId]);
@@ -87,6 +112,9 @@ class WithdrawalRequest extends CustomerRequest
     /** @return array<int, array<string,mixed>> order_items rows this request covers. */
     public function items(): array
     {
+        // Joins through the withdrawal_request_items link table to get the
+        // actual order_items rows this request applies to (see createFor()
+        // above for how that link table gets populated).
         $stmt = static::pdo()->prepare(
             'SELECT oi.* FROM order_items oi
              JOIN withdrawal_request_items wri ON wri.order_item_id = oi.id

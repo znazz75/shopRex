@@ -12,6 +12,13 @@
  *
  *   $makeContainer = require __DIR__ . '/src/bootstrap.php';
  *   $container = $makeContainer(isAdmin: false); // or true, from admin/index.php
+ *
+ * In plain terms: this file is the app's "wiring diagram" - it's the one
+ * place that says how every shared service (database connection, cart,
+ * settings, mailer, payment gateways, ...) gets built and what it depends
+ * on. Nothing here does real work itself; it just registers factory
+ * closures on the Container so services get built lazily, only when
+ * something actually asks for them via Container::make().
  */
 
 use ShopRex\Core\Container;
@@ -63,6 +70,18 @@ require_once dirname(__DIR__) . '/includes/ImageProcessor.php';
 return function (bool $isAdmin = false): Container {
     $container = new Container();
 
+    // Everything below is registered with Container::singleton(), which
+    // just records *how* to build each service (a closure) without
+    // building it yet - see Core\Container's docblock. Each closure
+    // receives the container itself ($c) so it can pull its own
+    // dependencies out by id, wiring up the whole dependency graph by hand
+    // (no autowiring/reflection magic - deliberate, see Container's
+    // docblock for why).
+
+    // The shared PDO database connection - delegates to the existing
+    // legacy Database::getConnection() singleton (config/database.php)
+    // rather than opening a second connection, so OOP and legacy code
+    // share one PDO instance/transaction state.
     $container->singleton(\PDO::class, fn () => Database::getConnection());
 
     $container->singleton(Session::class, fn () => new Session());
@@ -154,7 +173,14 @@ return function (bool $isAdmin = false): Container {
         ));
     }
 
+    // Stash this container in the static Registry so the small set of
+    // global compatibility-shim functions in view-helpers.php (called from
+    // legacy view templates with no container in scope) can still reach
+    // container-managed services - see Core\Registry's docblock.
     Registry::set($container);
+    // Boots the i18n system (loads the current language's translation
+    // strings) once per request, right after SettingsRepository is
+    // available, since I18n needs it to know which language is active.
     I18n::boot($container->make(SettingsRepository::class), $projectRoot . '/includes/lang');
 
     return $container;

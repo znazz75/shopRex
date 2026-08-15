@@ -1,6 +1,10 @@
 <?php
 /**
- * Session-based shopping cart.
+ * Session-based shopping cart - represents "everything this visitor has
+ * put in their basket so far". It's a plain static class rather than an
+ * object you instantiate: every method reaches directly into
+ * $_SESSION['cart'], so the cart's state simply IS the visitor's PHP
+ * session, with nothing else to construct or pass around.
  * Cart contents are stored in $_SESSION['cart'] as:
  *   [ "productId:v1-v2" => ['product_id'=>, 'option_value_ids'=>[...], 'quantity'=> ] ]
  * A product can have more than one option group (e.g. Size + Color); every
@@ -10,12 +14,38 @@
  * Stock for a product with any options is tracked per exact combination via
  * product_variants/product_variant_values (see findVariant() below and the
  * schema.sql comment on product_variants) - not per single option value.
+ *
+ * Why this class still exists as-is: it's one of the "legacy classes kept
+ * as-is" from before the OOP rewrite (see CLAUDE.md's "Legacy classes kept
+ * as-is" section) - required directly via `require_once` in
+ * src/container.php rather than ported into the ShopRex\ namespace,
+ * because includes/header.php (a template intentionally left unconverted)
+ * still calls the unqualified `Cart::count()` global function directly.
+ * The newer `Models\Cart` (an instance held in the dependency-injection
+ * Container, used by the rest of the OOP code) wraps/delegates to this
+ * class's logic rather than replacing it outright.
+ *
+ * Security note: getItems() below must scope its option-value lookup by
+ * that option's own product_id - without that check, a crafted option-value
+ * ID belonging to a *different* product could be used to apply that other
+ * product's price_modifier/stock to this product's cart line. This was a
+ * real bug that was found and fixed - see docs/SECURITY_AUDIT.md finding
+ * #1 and the comment at the query in getItems() below.
  */
 
 class Cart
 {
+    /**
+     * Builds the array key that identifies one distinct cart line: a
+     * product plus one exact combination of chosen option values (e.g.
+     * "Size: M, Color: Red"). Sorting the ids first makes the key
+     * order-independent, so picking "Color then Size" and "Size then
+     * Color" in the UI both land on the same cart line instead of
+     * accidentally creating two separate ones.
+     */
     public static function key(int $productId, array $optionValueIds): string
     {
+        // Sort so the key doesn't depend on the order options were chosen in.
         sort($optionValueIds);
         return $productId . ':' . (empty($optionValueIds) ? '0' : implode('-', $optionValueIds));
     }
@@ -30,11 +60,17 @@ class Cart
      */
     public static function findVariant(int $productId, array $optionValueIds): ?array
     {
+        // Normalise: force every id to an int (defends against non-numeric
+        // junk from a crafted request) and drop duplicates, since a valid
+        // selection never picks the same option value twice.
         $optionValueIds = array_values(array_unique(array_map('intval', $optionValueIds)));
         if (empty($optionValueIds)) {
             return null;
         }
 
+        // A selection only counts as "complete" if it has exactly one value
+        // per option group the product defines (e.g. both Size AND Color) -
+        // fewer values than that can never uniquely identify one variant row.
         $groupCountStmt = db()->prepare('SELECT COUNT(*) FROM product_options WHERE product_id = ?');
         $groupCountStmt->execute([$productId]);
         $groupCount = (int)$groupCountStmt->fetchColumn();
@@ -42,7 +78,13 @@ class Cart
             return null;
         }
 
+        // Build a "?,?,?" placeholder list sized to match the number of
+        // chosen ids - still fully parameterised (nothing here is
+        // string-concatenated into the SQL), only the *count* of
+        // placeholders is computed dynamically.
         $placeholders = implode(',', array_fill(0, count($optionValueIds), '?'));
+        // Every variant row that has at least $groupCount of its
+        // option-value links matching the chosen ids.
         $stmt = db()->prepare(
             "SELECT pv.* FROM product_variants pv
              JOIN product_variant_values pvv ON pvv.product_variant_id = pv.id
@@ -67,15 +109,28 @@ class Cart
         return null;
     }
 
+    /**
+     * Adds $quantity of a product (with an optional set of chosen option
+     * values, e.g. Size+Color) to the cart. If that exact combination is
+     * already in the cart, its quantity is increased instead of creating a
+     * second, duplicate line - this is what makes "Add to Cart" on a
+     * product you already have in your basket feel like "add more" rather
+     * than "start a new line".
+     */
     public static function add(int $productId, array $optionValueIds, int $quantity): void
     {
+        // Lazily create the session array the first time anything is added.
         if (!isset($_SESSION['cart'])) {
             $_SESSION['cart'] = [];
         }
+        // array_filter drops any falsy id (e.g. "0" from an unselected
+        // <select>) before it becomes part of the cart key.
         $optionValueIds = array_values(array_filter(array_map('intval', $optionValueIds)));
         $key = self::key($productId, $optionValueIds);
 
         if (isset($_SESSION['cart'][$key])) {
+            // Same product + same exact option combination already in the
+            // cart - just increase its quantity rather than duplicating it.
             $_SESSION['cart'][$key]['quantity'] += $quantity;
         } else {
             $_SESSION['cart'][$key] = [
@@ -86,9 +141,16 @@ class Cart
         }
     }
 
+    /**
+     * Sets a cart line's quantity to an exact value (unlike add(), which is
+     * additive) - this is what the cart page's quantity input field posts.
+     * A quantity of 0 or below removes the line entirely, since a cart line
+     * for zero units doesn't make sense to keep around.
+     */
     public static function updateQuantity(string $key, int $quantity): void
     {
         if ($quantity <= 0) {
+            // Treat "set to zero/negative" the same as "remove this line".
             unset($_SESSION['cart'][$key]);
             return;
         }
@@ -97,21 +159,29 @@ class Cart
         }
     }
 
+    /** Removes one cart line entirely, identified by its key() - e.g. clicking a "Remove" button on the cart page. */
     public static function remove(string $key): void
     {
         unset($_SESSION['cart'][$key]);
     }
 
+    /** Empties the entire cart - e.g. called right after an order is successfully placed. */
     public static function clear(): void
     {
         $_SESSION['cart'] = [];
     }
 
+    /** True when the cart currently has no lines at all - used to hide the cart icon badge, block checkout, etc. */
     public static function isEmpty(): bool
     {
         return empty($_SESSION['cart']);
     }
 
+    /**
+     * Total number of individual units across every cart line (2 shirts +
+     * 1 hat = 3), not the number of distinct lines - this is the number
+     * shown in the cart icon badge in the site header.
+     */
     public static function count(): int
     {
         $count = 0;
@@ -143,6 +213,12 @@ class Cart
         $lang = getCurrentLanguage();
 
         foreach ($_SESSION['cart'] ?? [] as $key => $entry) {
+            // Re-fetch the product fresh from the DB on every read (never
+            // trust anything cached in the session) so price changes,
+            // discounts, or stock updates made in Admin -> Products show up
+            // immediately, even for items already sitting in someone's
+            // cart. The correlated subqueries pull the tax rate percentage
+            // and the primary product image alongside the product row.
             $stmt = db()->prepare(
                 'SELECT p.id, p.name, p.slug, p.price, p.discount_type, p.discount_value, p.discount_starts_at, p.discount_ends_at, p.stock_quantity, p.weight_kg, p.max_order_quantity,
                         (SELECT rate FROM tax_rates WHERE id = p.tax_rate_id) AS tax_rate_percent,
@@ -155,12 +231,24 @@ class Cart
             if (!$product) {
                 continue; // product removed/deleted
             }
+            // Overlay $lang's translated name/description onto the base
+            // (default-language) row - falls back to the base text
+            // per-field whenever no translation exists for that field.
             $product = applyProductTranslation($product, $lang);
 
+            // getEffectivePrice() returns the active discounted price if
+            // one applies right now, otherwise the regular price - always
+            // NET (before tax). getTaxRatePercent() is 0 outright whenever
+            // VAT is disabled site-wide (Admin -> Settings).
             $unitPrice = getEffectivePrice($product);
             $taxRate = getTaxRatePercent($product);
             $optionLabels = [];
             $availableStock = (int)$product['stock_quantity'];
+            // Legacy fallback: a session cart created before multi-option
+            // support existed may still hold a single 'option_value_id'
+            // instead of an 'option_value_ids' array - normalise it into
+            // the same array shape so the rest of this method only needs
+            // one code path.
             $optionValueIds = $entry['option_value_ids'] ?? (isset($entry['option_value_id']) && $entry['option_value_id'] ? [$entry['option_value_id']] : []);
             $variantId = null;
 
@@ -199,6 +287,13 @@ class Cart
                     $optStmt->execute([$lang, $lang, $optionValueId, $product['id']]);
                     $option = $optStmt->fetch();
                     if ($option) {
+                        // Add this option's price modifier (e.g. "+2.00 for
+                        // size XL") onto the running unit price, and build a
+                        // human-readable label like "Size: XL". When there's
+                        // no variant matrix, be conservative and shrink the
+                        // available stock down to the smallest number found
+                        // across the chosen option values, so the cart line
+                        // never overstates what's actually in stock.
                         $unitPrice += (float)$option['price_modifier'];
                         $optionLabels[] = $option['option_name'] . ': ' . $option['value'];
                         if (!$variant) {
@@ -218,14 +313,24 @@ class Cart
             // modifier push a line into negative territory - a unit price is
             // never less than free.
             $unitPrice = max(0.0, $unitPrice);
+            // Round at the line level (not just once at the very end) so the
+            // individual line totals shown on screen always add up exactly
+            // to the displayed subtotal - avoids the classic "the numbers
+            // don't quite add up" rounding complaint.
             $lineTotal = round($unitPrice * $entry['quantity'], 2);
             $lineTax = round($lineTotal * $taxRate / 100, 2);
             $subtotal += $lineTotal;
             $taxTotal += $lineTax;
             if ($taxRate > 0) {
+                // Group tax by rate (e.g. all 19% lines together, all 7%
+                // lines together) for the "VAT 19%: X / VAT 7%: Y" style
+                // breakdown shown on the cart page and printed on invoices.
                 $taxBreakdown[$taxRate] = ($taxBreakdown[$taxRate] ?? 0) + $lineTax;
             }
 
+            // One row per cart line, shaped for direct use by the cart page,
+            // the checkout summary, and the order_items snapshot written at
+            // checkout time.
             $items[] = [
                 'key'              => $key,
                 'product_id'       => $product['id'],
@@ -246,6 +351,8 @@ class Cart
             ];
         }
 
+        // Sort by rate ascending, so a display like "7% ... 19%" is always
+        // in a stable, predictable order rather than insertion order.
         ksort($taxBreakdown);
 
         return [
@@ -278,6 +385,13 @@ class Cart
     public static function getActiveShippingMethods(): array
     {
         $methods = db()->query('SELECT * FROM shipping_methods WHERE is_active = 1 ORDER BY sort_order, id')->fetchAll();
+        // &$method (by reference) lets each row be mutated in place to
+        // attach its weight tiers, without having to rebuild the whole
+        // $methods array. unset($method) right after the loop is important -
+        // without it, $method would keep pointing at the last array element,
+        // and a later, unrelated `foreach ($methods as $method)` elsewhere
+        // in the codebase could silently overwrite that last row (a classic
+        // PHP foreach-by-reference gotcha).
         foreach ($methods as &$method) {
             $stmt = db()->prepare('SELECT * FROM shipping_weight_tiers WHERE shipping_method_id = ? ORDER BY up_to_weight_kg ASC');
             $stmt->execute([$method['id']]);
@@ -307,9 +421,14 @@ class Cart
         $stmt->execute([$methodId]);
         $method = $stmt->fetch();
         if (!$method) {
+            // Unknown or deactivated method id - nothing to charge. Checkout
+            // would already have filtered this out of the method picker, so
+            // this is just defense-in-depth against a stale/tampered id.
             return 0.0;
         }
 
+        // Either free-shipping condition alone is enough to qualify - they
+        // are not both required (e.g. "free over 50 EUR" OR "free for 10+ items").
         if ($method['free_shipping_min_order_value'] !== null && $subtotal >= (float)$method['free_shipping_min_order_value']) {
             return 0.0;
         }
@@ -317,6 +436,9 @@ class Cart
             return 0.0;
         }
 
+        // Weight tiers ordered lightest-to-heaviest (see the ORDER BY), so
+        // the loop below finds the cheapest tier whose ceiling still covers
+        // the cart.
         $tierStmt = db()->prepare('SELECT * FROM shipping_weight_tiers WHERE shipping_method_id = ? ORDER BY up_to_weight_kg ASC');
         $tierStmt->execute([$methodId]);
         $tiers = $tierStmt->fetchAll();
@@ -324,13 +446,18 @@ class Cart
             return 0.0;
         }
 
+        // First (i.e. cheapest) tier whose weight ceiling covers the cart.
         foreach ($tiers as $tier) {
             if ($cartWeightKg <= (float)$tier['up_to_weight_kg']) {
                 return (float)$tier['price'];
             }
         }
 
-        // Heavier than every defined tier.
+        // Heavier than every defined tier - start from the top (heaviest)
+        // tier's price (see point 3 in the docblock above) and, if an extra
+        // weight step is configured, add one extra_weight_step_price charge
+        // for every started extra_weight_step_kg beyond that tier's ceiling.
+        // ceil() means even 1kg into a new step charges for the whole step.
         $topTier = end($tiers);
         $cost = (float)$topTier['price'];
         if ($method['extra_weight_step_kg'] > 0 && $method['extra_weight_step_price'] !== null) {

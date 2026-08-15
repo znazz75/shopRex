@@ -1,17 +1,35 @@
 <?php
 /**
- * @var array $current
- * @var array $fields
- * @var array $legalFields
- * @var array $paymentTextFields
- * @var array $paymentSecretFields
- * @var array $availableThemePackages
- * @var string $activeThemePackageKey
- * @var array $colorThemes
- * @var array $allAvailableLangsForForm
- * @var array $enabledLangsForForm
- * @var array $perPageOptions
- * @var string|null $siteUrlError
+ * Admin -> Settings: one long page of independent setting groups, each in
+ * its own <div class="card">. Almost every card's fields are part of ONE
+ * big form (id="settingsForm") that saves everything together to
+ * SettingsAdminController's main POST handler - only the "Site URL" card
+ * near the top and the "Run GDPR cleanup now" button at the bottom are
+ * separate, standalone forms with their own POST targets, because those
+ * two are one-off actions rather than persisted key/value settings.
+ *
+ * Theme-package picker note (see CLAUDE.md's "Themes" section): a
+ * *storefront* layout package concept, being configured from an *admin*
+ * screen - $availableThemePackages/$activeThemePackageKey come from the
+ * always-storefront-flavored 'ThemeManager.storefront' container binding,
+ * NOT the fixed-layout admin ThemeManager instance (which has no package
+ * mechanism at all). This is unrelated to $colorThemes just below it,
+ * which only recolors CSS variables within whichever layout package is
+ * active - two separate concepts that happen to look like similar radio
+ * button grids on this page.
+ *
+ * @var array       $current                 Every setting's current saved value, keyed by setting name - the source for every field's prefilled value below.
+ * @var array       $fields                  Plain shop-details settings (name => label) rendered generically as text inputs in the "Shop Details" card.
+ * @var array       $legalFields             Company/legal settings (name => label, e.g. company_legal_name, vat_id) for the "Company / Legal" card.
+ * @var array       $paymentTextFields       Non-secret payment gateway settings (name => label, e.g. a PayPal client ID) rendered as plain text inputs.
+ * @var array       $paymentSecretFields     Secret payment gateway settings (name => label, e.g. an API secret key) rendered as password inputs that never echo the actual saved value back (see the "secret_configured" placeholder logic below).
+ * @var array       $availableThemePackages  Every discovered storefront theme package (key => ['name', 'description']), for the "Layout" picker.
+ * @var string      $activeThemePackageKey   Which theme package is currently active.
+ * @var array       $colorThemes             The color-accent presets (key => ['label', 'accent', 'navbar_bg']) from the THEMES array, for the "Frontend Colors" picker.
+ * @var array       $allAvailableLangsForForm Every language that exists on disk (see I18n::availableLanguages()) - deliberately the "all", not "enabled", set, since this is the one screen that needs to show currently-disabled languages too (to let an admin re-enable one).
+ * @var array       $enabledLangsForForm     The subset of $allAvailableLangsForForm currently enabled - used to pre-check the right checkboxes below.
+ * @var array       $perPageOptions          Allowed values for "items per page" (e.g. '10','20','50','all'), for the product-listing page-size dropdown.
+ * @var string|null $siteUrlError            Validation error for the site-URL field specifically (that form has its own error slot, separate from the main settings form), or null.
  */
 $base = rtrim(SITE_URL, '/') . '/admin/settings';
 ?>
@@ -22,6 +40,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/settings';
   <p style="color:var(--color-muted);font-size:13px;">
     <?= e(__('admin.settings.site_url_hint', ['url' => SITE_URL])) ?>
   </p>
+  <?php /* This form is standalone (its own action="/site-url", own error slot) rather than part of the big #settingsForm below - changing the site's base URL is disruptive enough (affects every generated link) that it's kept as its own explicit, isolated action. */ ?>
   <?php if ($siteUrlError): ?><div class="flash flash-error"><?= e($siteUrlError) ?></div><?php endif; ?>
   <form method="post" action="<?= e($base) ?>/site-url" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
     <?= csrfField() ?>
@@ -33,9 +52,11 @@ $base = rtrim(SITE_URL, '/') . '/admin/settings';
   </form>
 </div>
 
+<?php /* Everything below, down to the closing </form> near the bottom, is ONE form that saves every setting card together in a single POST. */ ?>
 <form method="post" action="<?= e($base) ?>" id="settingsForm">
   <?= csrfField() ?>
 
+  <?php /* THEME PACKAGE picker (structurally different storefront layouts, e.g. a completely different homepage/header arrangement - not just colors). See this file's top docblock for why $availableThemePackages comes from the storefront-flavored ThemeManager binding even though this is an admin screen. */ ?>
   <div class="card">
     <h2 style="margin-top:0;"><?= e(__('admin.settings.layout_heading')) ?></h2>
     <p style="color:var(--color-muted);font-size:13px;"><?= e(__('admin.settings.layout_hint')) ?></p>
@@ -53,6 +74,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/settings';
     <p style="color:var(--color-muted);font-size:13px;margin:10px 0 0;"><?= e(__('admin.settings.layout_add_hint')) ?></p>
   </div>
 
+  <?php /* COLOR ACCENT picker - a completely separate mechanism from the layout package above (see CLAUDE.md's "Themes" section): this only swaps CSS variables (accent/navbar colors) within whichever layout package is active, it can't change page structure. Each swatch pair previews the accent color and navbar background so the admin doesn't have to guess from the name alone. */ ?>
   <div class="card">
     <h2 style="margin-top:0;"><?= e(__('admin.settings.frontend_layout')) ?></h2>
     <p style="color:var(--color-muted);font-size:13px;"><?= e(__('admin.settings.frontend_layout_hint')) ?></p>
@@ -76,6 +98,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/settings';
       <?= e(__('admin.settings.language_hint')) ?>
     </p>
 
+    <?php /* Deliberately lists ALL languages that exist on disk (not just currently-enabled ones, see this file's docblock) - this is the one screen where a currently-disabled language needs to still be selectable, to turn it back on. */ ?>
     <div class="form-group">
       <label><?= e(__('admin.settings.enabled_languages')) ?></label>
       <?php foreach ($allAvailableLangsForForm as $code => $label): ?>
@@ -87,6 +110,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/settings';
       <small style="color:var(--color-muted);"><?= e(__('admin.settings.enabled_languages_hint')) ?></small>
     </div>
 
+    <?php /* A language can be picked as default even while its checkbox above is unchecked (the "disabled" suffix just warns about that combination) - the controller is expected to reconcile/validate that combination on save, this dropdown doesn't block the selection itself. */ ?>
     <div class="form-group" style="max-width:280px;">
       <label for="default_language"><?= e(__('admin.settings.default_language')) ?></label>
       <select id="default_language" name="default_language">
@@ -103,6 +127,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/settings';
     </div>
   </div>
 
+  <?php /* Shop-wide VAT on/off - this is the setting vatIsEnabled() (used throughout the admin and storefront) actually reads; turning it off hides every tax-related field/column across the whole app, not just here. */ ?>
   <div class="card">
     <h2 style="margin-top:0;"><?= e(__('admin.settings.vat')) ?></h2>
     <div class="form-group">
@@ -165,6 +190,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/settings';
           <input type="text" id="<?= e($key) ?>" name="<?= e($key) ?>" autocomplete="off" value="<?= e($current[$key] ?? '') ?>">
         </div>
       <?php endforeach; ?>
+      <?php /* Secret fields (API keys) are NEVER echoed back into the value="" attribute, unlike every other field on this page - that would expose the real secret in the page's HTML source to anyone who can view it. The placeholder just indicates "a value is already saved" without revealing what it is; leaving the field blank on submit is expected to mean "keep the existing secret", not "clear it" (same UX pattern as the admin-account password field). */ ?>
       <?php foreach ($paymentSecretFields as $key => $label): ?>
         <div class="form-group">
           <label for="<?= e($key) ?>"><?= e($label) ?></label>
@@ -179,6 +205,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/settings';
     <h2 style="margin-top:0;"><?= e(__('admin.settings.product_listings')) ?></h2>
     <div class="form-group" style="max-width:280px;">
       <label for="items_per_page_default"><?= e(__('admin.settings.default_items_per_page')) ?></label>
+      <?php /* $perPageOptions is a list of numeric strings plus a special 'all' value - 'all' gets its own translated label ("Show all") since displaying the literal word "all" as a number wouldn't make sense; every numeric option just displays its own value. */ ?>
       <select id="items_per_page_default" name="items_per_page_default">
         <?php foreach ($perPageOptions as $opt): ?>
           <option value="<?= e($opt) ?>" <?= ($current['items_per_page_default'] ?? '20') === $opt ? 'selected' : '' ?>><?= $opt === 'all' ? e(__('shop.show_all')) : $opt ?></option>
@@ -215,6 +242,10 @@ $base = rtrim(SITE_URL, '/') . '/admin/settings';
 </form>
 
 <script>
+  // Guard rail: unchecking every language checkbox would leave the shop
+  // with no enabled language at all (breaking every page that calls
+  // I18n::current()) - rather than blocking it outright, this just asks
+  // for confirmation before letting such a submission through.
   document.getElementById('settingsForm').addEventListener('submit', function (e) {
     var checked = document.querySelectorAll('input[name="enabled_languages[]"]:checked');
     if (checked.length === 0 && !confirm(<?= json_encode(__('admin.settings.enabled_languages_confirm_empty')) ?>)) {
@@ -223,6 +254,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/settings';
   });
 </script>
 
+<?php /* Manually triggers Services\GdprService's scheduled cleanup (which would otherwise only run via a cron/scheduled task) right now, on demand - see the gdpr_inactivity_months setting above for the threshold it uses. Standalone form, separate from the big settings form, since this is a one-off action rather than a setting to save. */ ?>
 <form method="post" action="<?= e($base) ?>/gdpr-cleanup" style="margin-top:16px;" data-confirm="<?= e(__('admin.settings.confirm_run_cleanup')) ?>">
   <?= csrfField() ?>
   <button class="btn btn-secondary" type="submit"><?= e(__('admin.settings.run_cleanup_now')) ?></button>

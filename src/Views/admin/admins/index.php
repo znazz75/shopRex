@@ -1,9 +1,16 @@
 <?php
 /**
- * @var array $me
- * @var array $errors
- * @var array|null $editAdmin
- * @var array $admins
+ * Admin -> Admin Accounts: one combined list+edit-form page for managing
+ * other admin logins. Only reachable by the 'super_admin' role (the
+ * 'admins' capability in Core\Auth\AdminAuth::CAPABILITIES belongs to
+ * super_admin only - see CLAUDE.md's "two roles" section) - a manager
+ * never sees this nav link at all. Same create-vs-edit-share-one-form
+ * pattern as Categories/Tax Rates.
+ *
+ * @var array      $me        The currently logged-in admin's own row - used to stop an admin from deleting their own account (see the delete-button check below) and to label their own row "(you)" in the table.
+ * @var array      $errors    Validation error messages to show above the form.
+ * @var array|null $editAdmin The admin account being edited, or null when the form is in "create new" mode.
+ * @var array      $admins    Every admin account, for the table below.
  */
 ?>
 <div class="page-header"><h1><?= e(__('admin.admin_accounts')) ?></h1></div>
@@ -22,6 +29,7 @@
       <div class="form-group">
         <label for="role"><?= e(__('admin.admins.role')) ?></label>
         <select id="role" name="role">
+          <?php /* \ShopRex\Core\Auth\AdminAuth::ROLES is the single source of truth for what roles exist ('super_admin', 'manager') - looping it here means adding a new role there automatically shows up in this dropdown too. Defaults to 'manager' (the less-privileged role) when creating a new admin and no role has been picked yet. */ ?>
           <?php foreach (\ShopRex\Core\Auth\AdminAuth::ROLES as $roleKey => $roleLabel): ?>
             <option value="<?= e($roleKey) ?>" <?= (($editAdmin['role'] ?? 'manager') === $roleKey) ? 'selected' : '' ?>><?= e(adminRoleLabel($roleKey)) ?></option>
           <?php endforeach; ?>
@@ -37,7 +45,9 @@
       </div>
     </div>
     <div class="form-group">
+      <?php /* Password hint text ("leave blank to keep current password") only appears while editing an existing account - a brand new account has no existing password to keep. */ ?>
       <label for="password"><?= e(__('common.password')) ?> <?= !empty($editAdmin['id']) ? e(__('admin.admins.password_hint')) : '' ?></label>
+      <?php /* Required only when creating (no $editAdmin id yet); optional when editing, so submitting the edit form without touching this field doesn't wipe out the existing password. */ ?>
       <input type="password" id="password" name="password" minlength="8" <?= empty($editAdmin['id']) ? 'required' : '' ?>>
     </div>
     <button class="btn" type="submit"><?= e(__('admin.admins.save')) ?></button>
@@ -50,6 +60,7 @@
   <tbody>
   <?php foreach ($admins as $a): ?>
     <tr>
+      <?php /* Label the logged-in admin's own row so it's obvious at a glance which one is "me" in a list of several admins. */ ?>
       <td><?= e($a['username']) ?><?= (int)$a['id'] === (int)$me['id'] ? ' <small style="color:var(--color-muted);">(' . e(__('admin.admins.you')) . ')</small>' : '' ?></td>
       <td><?= e($a['email']) ?></td>
       <td><?= e(adminRoleLabel($a['role'])) ?></td>
@@ -57,6 +68,7 @@
       <td><?= $a['last_login'] ? e(formatLocalDate($a['last_login'], true)) : e(__('admin.admins.never')) ?></td>
       <td>
         <a class="btn btn-sm btn-secondary" href="<?= rtrim(SITE_URL, '/') ?>/admin/admins?edit=<?= (int)$a['id'] ?>"><?= e(__('common.edit')) ?></a>
+        <?php /* No delete button on your own row - stops an admin from accidentally locking themselves out by deleting the account they're currently signed in as. */ ?>
         <?php if ((int)$a['id'] !== (int)$me['id']): ?>
           <form method="post" action="<?= rtrim(SITE_URL, '/') ?>/admin/admins" style="display:inline;" data-confirm="<?= e(__('admin.admins.confirm_delete', ['username' => $a['username']])) ?>">
             <?= csrfField() ?>

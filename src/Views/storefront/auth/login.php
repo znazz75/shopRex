@@ -1,4 +1,21 @@
-<?php /** @var string|null $error */ ?>
+<?php
+/**
+ * Storefront customer login form. Rendered by
+ * Controllers\Storefront\AuthController::showLogin() (GET, $error always
+ * null) and ::login() (POST - re-renders this same view with $error set on
+ * bad credentials or after too many failed attempts). Just the body;
+ * Core\Renderer::render() wraps it with the theme's header.php/footer.php.
+ *
+ * Login attempts are rate-limited server-side (Services\RateLimiter, keyed
+ * by the submitted email) and a successful login rotates the session ID +
+ * CSRF token (session-fixation defense) - none of that is visible here,
+ * this view just displays whatever $error the controller decided on.
+ *
+ * @var string|null $error Login failure message ("invalid credentials" or
+ *                          "too many attempts"), or null when there's
+ *                          nothing to report (fresh GET).
+ */
+?>
 <div class="row justify-content-center">
   <div class="col-md-5">
     <div class="card">

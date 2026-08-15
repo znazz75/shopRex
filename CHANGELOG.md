@@ -8,6 +8,38 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [2.07] - 2026-08-15
+
+### Added
+- Thorough, plain-language comments and docblocks across the entire
+  codebase (157 files: `src/Core`, `src/Support`, `src/Models`,
+  `src/Services`, `src/Payment`, every `Controllers\Storefront`/
+  `Controllers\Admin` class, every view under `src/Views/`, `src/bootstrap.php`/
+  `container.php`/`view-helpers.php`/`routes/*.php`, the kept legacy
+  `includes/*.php` classes, and the three entry points) - every class,
+  method, and non-trivial line now explains what it does and why, aimed
+  at a newcomer being able to safely extend the app. Comments-only: no
+  logic, behavior, or output changed anywhere (verified per-file via
+  `php -l` and a full-diff review confirming every removed line was
+  itself a comment being expanded).
+
+### Fixed
+- Two dead-code findings surfaced while adding these comments were left
+  as-is (out of scope for a comments-only pass) but are worth a look:
+  `includes/PaymentGateway.php` is unreferenced anywhere (superseded by
+  `src/Payment/*`), and `TaxRateAdminController`'s injected
+  `TaxCalculator` is never used. Also flagged, not yet fixed: missing
+  rate-limit lockout extension in `AuthController::forgotPassword()`,
+  an O(n²)-ish re-hydration pattern in `CartController::update()`,
+  `RmaController::submit()` creating a ticket before its photo-upload/
+  email step, `ProductAdminController::delete()` not guarding against a
+  still-referenced product, `includes/InvoiceGenerator.php` having no
+  French label set (French orders get an English invoice), hardcoded
+  English strings in `includes/Mailer.php`'s order-confirmation email
+  (item table + bank-transfer/invoice instructions), and
+  `ImageCropController` not persisting the crop tool's chosen output
+  dimensions (only the selection rectangle).
+
 ## [2.06] - 2026-08-15
 
 ### Fixed

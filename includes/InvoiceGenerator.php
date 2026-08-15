@@ -4,9 +4,27 @@
  * Saved under uploads/invoices/ (never directly web-accessible - see
  * uploads/invoices/.htaccess - always served through invoice_download.php,
  * which checks the requester owns the order or is an admin).
+ *
+ * Why this class still exists as-is: one of the "legacy classes kept
+ * as-is" (see CLAUDE.md) - it was already a proper, single-purpose class
+ * before the OOP rewrite, so it's `require_once`'d as-is from
+ * src/container.php rather than ported into the ShopRex\ namespace.
+ * `Services\InvoiceService::generateForOrder()` is a thin new wrapper
+ * around this exact method - callers in the new src/ code go through that
+ * wrapper rather than calling InvoiceGenerator directly.
+ *
+ * Note: only 'en' and 'de' invoice label translations are defined below
+ * (see LABELS) even though the shop is otherwise trilingual (EN/DE/FR) -
+ * an order placed in French falls back to English invoice text via the
+ * in_array() check in generateForOrder().
  */
 class InvoiceGenerator
 {
+    // Every fixed label the PDF layout needs, per supported invoice
+    // language - looked up as $t['key'] throughout generateForOrder()
+    // below rather than going through the site-wide __()/i18n system,
+    // since this text is baked into a downloadable file rather than
+    // rendered live on a page.
     private const LABELS = [
         'en' => [
             'invoice' => 'Invoice', 'date' => 'Date', 'order_number' => 'Order number',
@@ -33,11 +51,22 @@ class InvoiceGenerator
      */
     public static function generateForOrder(array $order, array $items): array
     {
+        // Fall back to English whenever the order's saved language isn't
+        // one of the languages LABELS has translations for (see the class
+        // docblock's note on 'fr' not being covered here).
         $language = in_array($order['language'] ?? 'en', array_keys(self::LABELS), true) ? $order['language'] : 'en';
         $t = self::LABELS[$language];
 
+        // Deterministic invoice number derived purely from the order id -
+        // this is what lets generateForOrder() be called again safely for
+        // the same order (see docblock above): the number, and therefore
+        // the file path and the UNIQUE db row, always come out identical.
         $invoiceNumber = sprintf('INV-%s-%06d', date('Y'), $order['id']);
 
+        // Build the PDF top-to-bottom by hand: $y tracks the current
+        // vertical "cursor" position and is decremented after every line
+        // (SimplePdf's coordinate origin is the bottom-left of the page,
+        // so moving down the page means decreasing y).
         $pdf = new SimplePdf();
         $margin = 50;
         $width = $pdf->pageWidth();
@@ -48,6 +77,9 @@ class InvoiceGenerator
         $pdf->text($margin, $y, $shopName, 18, true);
         $y -= 10;
 
+        // Stamp a red "TEST ORDER" warning near the top of test-account
+        // invoices, so nobody mistakes a demo/trial order's PDF for a real
+        // one (see CLAUDE.md's "Test accounts" section).
         if (!empty($order['is_test_order'])) {
             $pdf->text($margin, $y - 14, $t['test_notice'], 9, true, [0.7, 0, 0]);
             $y -= 28;
@@ -64,6 +96,8 @@ class InvoiceGenerator
 
         $pdf->text($margin, $y, $t['billing_address'] . ':', 10, true);
         $y -= 14;
+        // array_filter() drops any blank line (e.g. a customer with no
+        // address_line2) so the address block never shows an empty gap.
         foreach (array_filter([
             $order['shipping_name'] ?? '',
             $order['shipping_address1'] ?? '',
@@ -76,13 +110,19 @@ class InvoiceGenerator
         }
         $y -= 15;
 
-        // Table columns
+        // Table columns - fixed x-positions measured backwards from the
+        // right margin, so the table's right edge always lines up exactly
+        // regardless of page width.
         $colItem = $margin;
         $colQty = $width - $margin - 260;
         $colPrice = $width - $margin - 205;
         $colTax = $width - $margin - 110;
         $colTotal = $width - $margin - 60;
 
+        // A small reusable closure (captures $y by reference via `&$y` so
+        // it can advance the shared cursor) rather than a separate method -
+        // needed both here and again whenever the item table spills onto a
+        // new page below.
         $drawTableHeader = function () use ($pdf, &$y, $margin, $width, $colItem, $colQty, $colPrice, $colTax, $colTotal, $t) {
             $pdf->text($colItem, $y, $t['item'], 10, true);
             $pdf->text($colQty, $y, $t['qty'], 10, true);
@@ -97,12 +137,18 @@ class InvoiceGenerator
 
         $taxBreakdown = [];
         foreach ($items as $item) {
+            // Not enough vertical room left for another row - start a new
+            // page and repeat the column headers there before continuing.
             if ($y < $pageBottom + 40) {
                 $pdf->addPage();
                 $y = $pdf->pageHeight() - $margin;
                 $drawTableHeader();
             }
 
+            // A long product name may need to wrap onto more than one line -
+            // wrapText() splits it, and only the *first* wrapped line ($j
+            // === 0) also gets the quantity/price/tax/total columns, so
+            // those numbers don't repeat once per wrapped line.
             foreach ($pdf->wrapText($item['product_name'], $colQty - $colItem - 10, 9) as $j => $lineText) {
                 $pdf->text($colItem, $y, $lineText, 9);
                 if ($j === 0) {
@@ -113,23 +159,31 @@ class InvoiceGenerator
                 }
                 $y -= 12;
             }
+            // A chosen option combination (e.g. "Size: M, Color: Red") is
+            // printed as a smaller, greyed-out line under the product name.
             if (!empty($item['option_summary'])) {
                 $pdf->text($colItem + 8, $y, $item['option_summary'], 8, false, [0.45, 0.45, 0.45]);
                 $y -= 12;
             }
 
+            // Accumulate this line's tax into the running per-rate total,
+            // for the "VAT 19%: X / VAT 7%: Y" summary block below.
             $rate = (float)$item['tax_rate_percent'];
             if ($rate > 0) {
                 $taxBreakdown[$rate] = ($taxBreakdown[$rate] ?? 0) + (float)$item['tax_amount'];
             }
             $y -= 4;
         }
+        // Sort by rate ascending for a stable, predictable display order.
         ksort($taxBreakdown);
 
         $y -= 6;
         $pdf->line($margin, $y, $width - $margin, $y, 0.75, [0.3, 0.3, 0.3]);
         $y -= 18;
 
+        // Make sure the whole totals block (subtotal + every tax line +
+        // shipping + grand total) fits before starting it, rather than
+        // letting it get split awkwardly across a page break partway through.
         if ($y < $pageBottom + 100) {
             $pdf->addPage();
             $y = $pdf->pageHeight() - $margin;
@@ -139,6 +193,8 @@ class InvoiceGenerator
         $pdf->text($colTotal, $y, formatPrice((float)$order['subtotal']), 10);
         $y -= 15;
 
+        // One line per distinct tax rate present in the order (e.g. an
+        // order mixing 19% and 7% VAT items shows both separately).
         foreach ($taxBreakdown as $rate => $amount) {
             $pdf->text($colTax, $y, $t['vat_on'] . ' ' . formatTaxRateNumber($rate) . '%:', 10);
             $pdf->text($colTotal, $y, formatPrice($amount), 10);
@@ -150,6 +206,8 @@ class InvoiceGenerator
         $pdf->text($colTotal, $y, formatPrice((float)$order['shipping_cost']), 10);
         $y -= 20;
 
+        // Bold divider + grand total line, visually separated from the
+        // subtotal/tax/shipping rows above it.
         $pdf->line($colTax - 10, $y + 10, $width - $margin, $y + 10, 0.75, [0.3, 0.3, 0.3]);
         $pdf->text($colTax, $y, $t['grand_total'] . ':', 12, true);
         $pdf->text($colTotal, $y, formatPrice((float)$order['total']), 12, true);
@@ -157,10 +215,16 @@ class InvoiceGenerator
 
         $pdf->text($margin, $y, $t['thank_you'], 10);
 
+        // Make sure uploads/invoices/ exists before trying to write into it
+        // (e.g. on a very first invoice ever generated) - @ suppresses the
+        // warning if it already exists or a race with another request just
+        // created it first.
         if (!is_dir(INVOICE_DIR)) {
             @mkdir(INVOICE_DIR, 0755, true);
         }
         $filePath = INVOICE_DIR . $invoiceNumber . '.pdf';
+        // Serialise every page's drawing operations into raw PDF bytes
+        // (see SimplePdf::output()) and write them straight to disk.
         file_put_contents($filePath, $pdf->output());
 
         // invoice_number is derived deterministically from the order id, so

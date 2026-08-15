@@ -1,9 +1,18 @@
 <?php
 /**
- * @var array $errors
- * @var array|null $editMethod
- * @var array $editTiers
- * @var array $methods
+ * Admin -> Shipping: one combined list+edit-form page for shipping
+ * methods. Same create-vs-edit-share-one-form pattern as Categories/Tax
+ * Rates/Admin Accounts (decided by whether $editMethod is set). Pricing
+ * for a method is weight-based (see Services\ShippingCalculator): a set
+ * of weight "tiers" (e.g. "up to 2kg = 4.99"), an optional per-extra-kg
+ * step price for anything heavier than the highest tier, and an optional
+ * free-shipping override once an order crosses a value/quantity
+ * threshold.
+ *
+ * @var array      $errors     Validation error messages to show above the form.
+ * @var array|null $editMethod The shipping method being edited, or null when the form is in "create new" mode.
+ * @var array      $editTiers  The weight-tier rows (up_to_weight_kg, price) belonging to $editMethod, prefilled into the "Weight Tiers" fieldset below.
+ * @var array      $methods    Every shipping method (with a tier_count and the free-shipping thresholds already joined in), for the table below.
  */
 ?>
 <div class="page-header"><h1><?= e(__('admin.shipping')) ?></h1></div>
@@ -25,6 +34,7 @@
     <fieldset>
       <legend><?= e(__('admin.shipping.weight_tiers')) ?></legend>
       <p style="color:var(--color-muted);font-size:13px;margin-top:0;"><?= e(__('admin.shipping.weight_tiers_hint')) ?></p>
+      <?php /* Each row is one weight bracket ("up to X kg costs Y"); tier_up_to[]/tier_price[] submit as parallel arrays the controller zips back together into rows. The add/remove buttons below are plain client-side JS (see the <script> block at the bottom of this file) - no tier is actually saved until the whole form is submitted. */ ?>
       <div id="tierRows">
         <?php foreach ($editTiers as $tier): ?>
           <div class="form-grid tier-row" style="align-items:end;">
@@ -37,6 +47,7 @@
       <button type="button" class="btn btn-sm btn-secondary" onclick="addTierRow()"><?= e(__('admin.shipping.add_tier')) ?></button>
     </fieldset>
 
+    <?php /* Applies only past the heaviest weight tier defined above - e.g. "add 1.50 for every extra 1kg beyond the last tier's cutoff" - so very heavy orders scale linearly instead of needing an endless list of tiers. */ ?>
     <fieldset>
       <legend><?= e(__('admin.shipping.extra_step_legend')) ?></legend>
       <p style="color:var(--color-muted);font-size:13px;margin-top:0;"><?= e(__('admin.shipping.extra_step_hint')) ?></p>
@@ -46,6 +57,7 @@
       </div>
     </fieldset>
 
+    <?php /* Optional override: once an order's value and/or item quantity crosses either threshold, this method becomes free regardless of the weight tiers/extra-step price above. Leaving both blank means no free-shipping rule for this method. */ ?>
     <fieldset>
       <legend><?= e(__('admin.shipping.free_shipping_legend')) ?></legend>
       <p style="color:var(--color-muted);font-size:13px;margin-top:0;"><?= e(__('admin.shipping.free_shipping_hint')) ?></p>
@@ -69,6 +81,7 @@
       <td><span class="badge badge-<?= $m['is_active'] ? 'completed' : 'cancelled' ?>"><?= $m['is_active'] ? e(__('common.active')) : e(__('admin.admins.disabled')) ?></span></td>
       <td><?= (int)$m['tier_count'] ?></td>
       <td>
+        <?php /* Summarize whichever free-shipping thresholds are set for this method (value and/or quantity can both be set, either, or neither); an em-dash when the method has no free-shipping rule at all. */ ?>
         <?php if ($m['free_shipping_min_order_value'] !== null): ?>
           <?= e(__('admin.shipping.free_summary_value', ['value' => formatPrice((float)$m['free_shipping_min_order_value'])])) ?><br>
         <?php endif; ?>
@@ -87,11 +100,16 @@
       </td>
     </tr>
   <?php endforeach; ?>
+  <?php /* Empty-state row when no shipping methods have been configured yet. */ ?>
   <?php if (empty($methods)): ?><tr><td colspan="5"><?= e(__('admin.shipping.none_yet')) ?></td></tr><?php endif; ?>
   </tbody>
 </table>
 
 <script>
+  // Client-side only: dynamically adds/removes weight-tier input rows inside
+  // the "Weight Tiers" fieldset above before the form is ever submitted.
+  // Nothing here talks to the server - the whole form (including any rows
+  // added/removed here) is saved together on submit.
   function addTierRow() {
     var container = document.getElementById('tierRows');
     var row = document.createElement('div');
@@ -105,6 +123,9 @@
   }
   function removeTierRow(btn) {
     var rows = document.querySelectorAll('.tier-row');
+    // Never remove the very last row entirely (an empty tierRows container
+    // would break the add-another-row layout) - just blank its inputs out
+    // instead so there's always at least one row to type into.
     if (rows.length <= 1) {
       btn.closest('.tier-row').querySelectorAll('input').forEach(function (i) { i.value = ''; });
       return;

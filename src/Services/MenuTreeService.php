@@ -11,12 +11,16 @@ namespace ShopRex\Services;
  */
 final class MenuTreeService
 {
+    // Memoizes tree() per location ('main'/'footer') for the rest of the
+    // request, since header/footer templates and admin menu screens can each
+    // ask for the same location's tree more than once per request.
     private array $treeCache = [];
 
     public function __construct(private readonly \PDO $pdo, private readonly CategoryTreeService $categories)
     {
     }
 
+    /** Turns a flat list of menu-item rows (each with a parent_id) into a nested tree, attaching each row's direct children under a 'children' key - same shape/logic as CategoryTreeService::buildTree(), kept separate because menu items and categories are different tables/entities. */
     public function buildTree(array $rows, ?int $parentId = null): array
     {
         $branch = [];
@@ -41,9 +45,11 @@ final class MenuTreeService
         return $this->treeCache[$location];
     }
 
+    /** Every menu-item ID in $itemId's subtree, including itself - e.g. used to stop an admin from re-parenting a menu item underneath its own descendant (see isOrDescendant()). */
     public function descendantIds(int $itemId): array
     {
         $rows = $this->pdo->query('SELECT id, parent_id FROM menu_items')->fetchAll();
+        // Same adjacency-map + work-queue walk as CategoryTreeService::descendantIds().
         $childrenOf = [];
         foreach ($rows as $row) {
             $parent = $row['parent_id'] !== null ? (int)$row['parent_id'] : 0;
@@ -61,11 +67,13 @@ final class MenuTreeService
         return $ids;
     }
 
+    /** True if $candidateParentId is $itemId itself or somewhere in its subtree - guards the admin "move menu item" UI against creating a parent/child cycle. */
     public function isOrDescendant(int $itemId, int $candidateParentId): bool
     {
         return in_array($candidateParentId, $this->descendantIds($itemId), true);
     }
 
+    /** Works out the actual URL a menu item should link to, based on its link_type - this is the single place that keeps menu links in sync with the app's clean-URL scheme (see CLAUDE.md: no .php or ?query links anywhere). */
     public function resolveUrl(array $item): string
     {
         $base = rtrim(SITE_URL, '/');
@@ -79,6 +87,9 @@ final class MenuTreeService
             case 'page':
                 return $base . '/page/' . urlencode($item['link_value']);
             default: // custom
+                // A "custom" link can be either a full external URL (kept
+                // as-is) or a relative in-site path (prefixed with the site
+                // base URL) - the regex distinguishes the two cases.
                 $val = $item['link_value'];
                 return preg_match('~^https?://~i', $val) ? $val : $base . '/' . ltrim($val, '/');
         }

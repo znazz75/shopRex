@@ -22,8 +22,8 @@ use ShopRex\Services\SettingsRepository;
  */
 final class WithdrawalController extends Controller
 {
-    private readonly \PDO $pdo;
-    private readonly SettingsRepository $settings;
+    private readonly \PDO $pdo; // Raw DB handle for the item-listing query below.
+    private readonly SettingsRepository $settings; // Read here for whatever setting WithdrawalRequest::calculateDeadline() needs (the withdrawal window length).
 
     public function __construct(Request $request, Container $container)
     {
@@ -32,6 +32,7 @@ final class WithdrawalController extends Controller
         $this->settings = $container->make(SettingsRepository::class);
     }
 
+    /** Shows the withdrawal form for one order: which items are eligible, the calculated deadline, and any existing request already on file for it. */
     public function show(Request $request): Response
     {
         if ($guard = $this->requireCustomerLogin()) {
@@ -53,6 +54,13 @@ final class WithdrawalController extends Controller
         ]);
     }
 
+    /**
+     * Validates and creates a withdrawal request for the order's selected
+     * items, then emails both the customer (confirmation) and the shop
+     * (notification). Every validation here is re-derived server-side
+     * (deadline, item eligibility) rather than trusted from the submitted
+     * form - see the SECURITY comment below for why.
+     */
     public function submit(Request $request): Response
     {
         if ($guard = $this->requireCustomerLogin()) {
@@ -66,6 +74,8 @@ final class WithdrawalController extends Controller
             return $errorResponse;
         }
 
+        // An order can only have one withdrawal request - block a second
+        // submission rather than creating a duplicate.
         if (WithdrawalRequest::findByOrder($order->id)) {
             $this->flash('error', __('withdrawal.already_submitted'));
             return $this->redirect('/account/orders/' . urlencode($order->orderNumber) . '/withdrawal');
@@ -81,6 +91,14 @@ final class WithdrawalController extends Controller
             return $this->redirect('/account/orders/' . urlencode($order->orderNumber) . '/withdrawal');
         }
 
+        // Build the set of item ids that are actually allowed to be
+        // withdrawn (array_filter keeps only non-hygiene items, array_column
+        // then pulls out just their ids), then intersect that against
+        // whatever ids the customer's checkboxes submitted - array_intersect
+        // means any submitted id that ISN'T in the eligible set (e.g. a
+        // hygiene product's id tampered into the form) is silently dropped
+        // rather than accepted. array_values() re-indexes the result from 0
+        // since array_intersect() preserves the original (non-sequential) keys.
         $eligibleIds = array_column(array_filter($this->allItemRows($order), fn ($row) => !$row['is_hygiene_product']), 'id');
         $submittedIds = array_map('intval', (array)$request->post('items', []));
         $validIds = array_values(array_intersect($submittedIds, $eligibleIds));
@@ -110,7 +128,17 @@ final class WithdrawalController extends Controller
         return $this->redirect('/account/orders/' . urlencode($order->orderNumber) . '/withdrawal');
     }
 
-    /** @return array{0: ?Order, 1: ?Response} */
+    /**
+     * Looks up the order by its number from the URL and confirms the
+     * currently-logged-in customer actually owns it, returning either
+     * [order, null] to proceed or [null, errorResponse] for the caller to
+     * return immediately. Both show() and submit() are gated behind
+     * requireCustomerLogin() already, so $customer here is always the
+     * logged-in customer, not a guest - see the class docblock for why
+     * withdrawal has no guest/admin access path, unlike order confirmation.
+     *
+     * @return array{0: ?Order, 1: ?Response}
+     */
     private function loadOwnedOrder(Request $request): array
     {
         $orderNumber = (string)$request->routeParam('orderNumber', '');
@@ -120,6 +148,9 @@ final class WithdrawalController extends Controller
         }
         $customer = CustomerAuth::current();
         $isOwner = $customer && $order->customerId !== null && (int)$order->customerId === (int)$customer['id'];
+        // Ownership check - without this, any logged-in customer could
+        // withdraw from any order just by knowing/guessing its order
+        // number in the URL.
         if (!$isOwner) {
             return [null, Response::html(__('order.not_found_text'), 403)];
         }

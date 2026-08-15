@@ -1,13 +1,18 @@
 <?php
 /**
- * @var array $messages
- * @var array $statuses
- * @var string $statusFilter
+ * Admin -> Contact Messages: list of storefront contact-form submissions
+ * (see Models\ContactMessage - rate-limited on the storefront side via
+ * Services\RateLimiter, same pattern as login throttling).
+ *
+ * @var array  $messages     The (already status-filtered) contact message rows - name, email, subject, status, created_at.
+ * @var array  $statuses     Every possible message status (e.g. 'new', 'read', 'closed'), for the filter dropdown.
+ * @var string $statusFilter Which status is currently filtered to ('' = all).
  */
 $base = rtrim(SITE_URL, '/') . '/admin/contact-messages';
 ?>
 <div class="page-header"><h1><?= e(__('admin.contact_messages')) ?></h1></div>
 
+<?php /* Auto-submits on change, same pattern as the Orders list filter - no separate "Apply" button needed. */ ?>
 <form class="toolbar" method="get">
   <select name="status" onchange="this.form.submit()">
     <option value=""><?= e(__('admin.contact_messages.all_statuses')) ?></option>
@@ -20,6 +25,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/contact-messages';
 <table class="data-table">
   <thead><tr><th><?= e(__('admin.contact_messages.from')) ?></th><th><?= e(__('admin.contact_messages.subject')) ?></th><th><?= e(__('common.status')) ?></th><th><?= e(__('common.date')) ?></th><th></th></tr></thead>
   <tbody>
+    <?php /* 'new' gets the attention-grabbing pending badge, 'closed' the muted cancelled-style badge, and everything else (e.g. 'read'/'in progress') falls into the neutral "completed" badge style. */ ?>
     <?php foreach ($messages as $m): ?>
       <tr>
         <td><a href="<?= e($base) ?>/<?= (int)$m['id'] ?>"><?= e($m['name']) ?></a><br><span style="color:var(--color-muted);font-size:12px;"><?= e($m['email']) ?></span></td>

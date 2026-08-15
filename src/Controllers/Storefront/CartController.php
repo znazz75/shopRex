@@ -19,8 +19,8 @@ use ShopRex\Models\Cart;
  */
 final class CartController extends Controller
 {
-    private readonly Cart $cart;
-    private readonly \PDO $pdo;
+    private readonly Cart $cart; // The current visitor's session-backed shopping cart - see Models\Cart's own docblock for the security-relevant option-value scoping this class relies on.
+    private readonly \PDO $pdo; // Raw DB handle used here for the "does this option value actually belong to this product" ownership check in add().
 
     public function __construct(Request $request, Container $container)
     {
@@ -29,7 +29,7 @@ final class CartController extends Controller
         $this->pdo = $container->make(\PDO::class);
     }
 
-    /** Ported from cart.php. */
+    /** Shows the cart page: line items, tax, and the cheapest available shipping cost shown as a preview (the shopper picks the actual method at checkout). Ported from cart.php. */
     public function index(Request $request): Response
     {
         $cart = $this->cart->getItems();
@@ -40,6 +40,9 @@ final class CartController extends Controller
 
         $cartWeightKg = $this->cart->getWeightKg();
         $totalQuantity = $this->cart->count();
+        // Show the cheapest of the active shipping methods as a preview
+        // figure on the cart page - the shopper doesn't choose a specific
+        // method until checkout, so this is just "shipping starts at ...".
         $shipping = null;
         $activeShippingMethods = $this->cart->getActiveShippingMethods();
         foreach ($activeShippingMethods as $method) {
@@ -48,7 +51,12 @@ final class CartController extends Controller
                 $shipping = $cost;
             }
         }
+        // No active shipping methods at all falls back to 0.0 rather than
+        // null, so the view can always treat $shipping as a plain number.
         $shipping = $shipping ?? 0.0;
+        // "Continue shopping" links back to whichever product page the
+        // visitor was on last (set by ProductController::show()), falling
+        // back to the storefront home page if they came straight to the cart.
         $continueShoppingUrl = $request->session()->get('last_product_url', rtrim(SITE_URL, '/') . '/');
         $pageTitle = __('cart.title');
 
@@ -58,7 +66,14 @@ final class CartController extends Controller
         ));
     }
 
-    /** Direct port of cart_action.php - single POST endpoint, action=add|update|remove. */
+    /**
+     * Single POST endpoint for every cart mutation (add/update/remove),
+     * dispatched by the action field - matches cart_action.php's original
+     * shape so every "add to cart"/quantity-update/remove form on the site
+     * can post to the same URL. Falls back to just redirecting to the cart
+     * page for a GET request or an unrecognized action, rather than erroring.
+     * Direct port of cart_action.php.
+     */
     public function handleAction(Request $request): Response
     {
         if (!$request->isPost()) {
@@ -78,6 +93,13 @@ final class CartController extends Controller
         };
     }
 
+    /**
+     * Adds a product (with its chosen options, if any) to the cart,
+     * enforcing option ownership, per-product order limits, and available
+     * stock before the line is actually added. This is the primary
+     * defense point for docs/SECURITY_AUDIT.md finding #1 - see the
+     * SECURITY comment below for exactly what it stops.
+     */
     private function add(Request $request): Response
     {
         $productId = (int)$request->post('product_id', 0);
@@ -97,6 +119,13 @@ final class CartController extends Controller
                     $this->flash('error', __('cart.select_all_options'));
                     return $this->redirectBackOrHome($request);
                 }
+                // The actual ownership check: JOIN from the submitted
+                // option-value id up to its option group, then require that
+                // group's product_id to match the product being added to -
+                // this is the query docs/SECURITY_AUDIT.md finding #1 says
+                // must never be dropped. A value id belonging to a
+                // *different* product's option group finds no matching row
+                // and is rejected below.
                 $ownStmt = $this->pdo->prepare(
                     'SELECT 1 FROM product_option_values ov
                      JOIN product_options po ON po.id = ov.product_option_id
@@ -111,6 +140,8 @@ final class CartController extends Controller
             }
         }
 
+        // status = 'active' means a disabled/hidden product can't be added
+        // even if its id is guessed directly.
         $stmt = $this->pdo->prepare("SELECT id, name, stock_quantity, max_order_quantity FROM products WHERE id = ? AND status = 'active'");
         $stmt->execute([$productId]);
         $product = $stmt->fetch();
@@ -119,9 +150,16 @@ final class CartController extends Controller
             return $this->redirect('/');
         }
 
+        // key()/quantityFor() find how many of this exact product+option
+        // combination are already in the cart, so the limits below account
+        // for what's already there, not just the newly requested quantity.
         $existingKey = $this->cart->key($productId, $optionValueIds);
         $existingQty = $this->cart->quantityFor($existingKey);
 
+        // A per-product cap on how many a single customer can order at once
+        // (max_order_quantity, null = no limit) - if adding this quantity
+        // would exceed it, silently clamp to whatever's still allowed
+        // rather than rejecting the whole add, and tell the shopper why.
         if ($product['max_order_quantity'] !== null) {
             $maxOrderQty = (int)$product['max_order_quantity'];
             if ($existingQty + $quantity > $maxOrderQty) {
@@ -133,6 +171,13 @@ final class CartController extends Controller
             }
         }
 
+        // For a product with options, stock is tracked per exact variant
+        // combination (product_variants), not per single option value -
+        // findVariant() only returns a row when every one of the product's
+        // option groups is represented in $optionValueIds (see its
+        // docblock in Models\Cart). No matching variant just means no
+        // stock limit is enforced here (the product doesn't use variant-
+        // level stock tracking).
         if ($optionValueIds) {
             $variant = $this->cart->findVariant($productId, $optionValueIds);
             if ($variant) {
@@ -154,6 +199,7 @@ final class CartController extends Controller
         return $this->redirect('/cart');
     }
 
+    /** Applies quantity changes from the cart page's "update" form - one $key => $qty pair per line, re-enforcing each product's max_order_quantity the same way add() does. A quantity of 0 or less removes the line (handled inside Cart::updateQuantity()). */
     private function update(Request $request): Response
     {
         $quantities = $request->post('quantity', []);
@@ -190,6 +236,7 @@ final class CartController extends Controller
         return $this->redirect('/cart');
     }
 
+    /** Removes one line from the cart by its composite key (see Models\Cart::key()). */
     private function remove(Request $request): Response
     {
         $this->cart->remove((string)$request->post('key', ''));
@@ -197,6 +244,7 @@ final class CartController extends Controller
         return $this->redirect('/cart');
     }
 
+    /** Sends the shopper back to whichever page they came from (e.g. the product page they added from) when a cart action can't proceed, falling back to the storefront home page if there's no usable referer. */
     private function redirectBackOrHome(Request $request): Response
     {
         $referer = $request->referer();

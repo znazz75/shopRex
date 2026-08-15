@@ -1,10 +1,18 @@
 <?php
 /**
- * @var \ShopRex\Models\RmaTicket $ticket
- * @var array|null $order
- * @var array|null $item
- * @var array $attachments
- * @var array $statuses
+ * Admin -> RMA Tickets -> single ticket detail: the claimed defect,
+ * customer-submitted photo evidence, and a form to change status/record a
+ * resolution.
+ *
+ * Note: like Withdrawals' detail page, $ticket is a real hydrated
+ * Models\RmaTicket object (property access, e.g. $ticket->status), not a
+ * plain array - see CLAUDE.md's Core\Model section.
+ *
+ * @var \ShopRex\Models\RmaTicket $ticket      The ticket being viewed - id, status, warrantyClaimType, defectDescription, resolutionNotes, adminNotes.
+ * @var array|null                $order       The order the claimed item was purchased on (customer_email, order_number, id), or null if it couldn't be loaded.
+ * @var array|null                $item        The specific order line item being claimed against (product_name), or null if it couldn't be loaded.
+ * @var array                     $attachments Customer-submitted photo evidence for this claim (up to 5, per CLAUDE.md) - file_path relative to /uploads/.
+ * @var array                     $statuses    Every possible ticket status, for the status dropdown.
  */
 $base = rtrim(SITE_URL, '/') . '/admin/rma-tickets/' . (int)$ticket->id;
 ?>
@@ -24,6 +32,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/rma-tickets/' . (int)$ticket->id;
   <?php endif; ?>
 </div>
 
+<?php /* Whole card is skipped when there are no photos at all (a claim doesn't require photo evidence) - each thumbnail also links to the full-size original in a new tab. */ ?>
 <?php if ($attachments): ?>
 <div class="card">
   <h2 style="margin-top:0;"><?= e(__('admin.rma_view.attachments')) ?></h2>
@@ -51,6 +60,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/rma-tickets/' . (int)$ticket->id;
         </select>
       </div>
     </div>
+    <?php /* Separate from admin_notes below: resolution_notes is meant to describe the OUTCOME (e.g. "replacement shipped 5/1") and may be shown to the customer, whereas admin_notes is internal-only - see the hint text and CLAUDE.md's CustomerRequest note on subtype-specific fields. */ ?>
     <div class="form-group">
       <label for="resolution_notes"><?= e(__('admin.rma_view.resolution_notes')) ?></label>
       <textarea id="resolution_notes" name="resolution_notes" rows="3"><?= e($ticket->resolutionNotes ?? '') ?></textarea>
@@ -60,6 +70,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/rma-tickets/' . (int)$ticket->id;
       <label for="admin_notes"><?= e(__('admin.order_view.admin_notes')) ?></label>
       <textarea id="admin_notes" name="admin_notes" rows="3"><?= e($ticket->adminNotes ?? '') ?></textarea>
     </div>
+    <?php /* Same opt-in notification pattern as Orders/Withdrawals - when checked, resolution_notes above (not admin_notes) is what gets included in the email sent to the customer. */ ?>
     <div class="form-group">
       <label><input type="checkbox" name="notify_customer" value="1" style="width:auto;"> <?= e(__('admin.withdrawal_view.notify_customer')) ?></label>
       <small style="color:var(--color-muted);display:block;"><?= e(__('admin.rma_view.notify_customer_hint')) ?></small>

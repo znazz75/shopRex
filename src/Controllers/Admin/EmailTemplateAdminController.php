@@ -7,9 +7,19 @@ use ShopRex\Core\Request;
 use ShopRex\Core\Response;
 use ShopRex\Services\I18n;
 
-/** Direct port of admin/email_templates.php. */
+/**
+ * Lets a Super Admin customize the wording of every outgoing transactional
+ * email (order confirmations, status updates, password resets, ...), per
+ * language, overriding the built-in defaults. Direct port of
+ * admin/email_templates.php. Exists as its own controller because email
+ * template editing is a distinct concern from settings/pages - it has its
+ * own storage table (email_templates) and its own per-key/per-language
+ * addressing scheme (see templateKeysMeta()) rather than fitting the
+ * simple key/value shape of Services\SettingsRepository.
+ */
 final class EmailTemplateAdminController extends AdminCrudController
 {
+    // Shared PDO connection used for the raw email_templates queries below.
     private readonly \PDO $pdo;
 
     public function __construct(Request $request, Container $container)
@@ -35,8 +45,12 @@ final class EmailTemplateAdminController extends AdminCrudController
         ];
     }
 
+    /** Shows the template list, and - if a specific template key was requested via ?key= - loads that template/language's current saved override (or blank defaults) into the edit form. */
     public function index(Request $request): Response
     {
+        // Only languages the shop currently has enabled are offered here (see
+        // CLAUDE.md's i18n section on enabledLanguages() vs availableLanguages())
+        // - editing a template for a disabled language wouldn't be useful.
         $availableLangs = I18n::enabledLanguages();
         $lang = (string)$request->get('lang', getSetting('default_language', 'en'));
         if (!array_key_exists($lang, $availableLangs)) {
@@ -47,6 +61,9 @@ final class EmailTemplateAdminController extends AdminCrudController
 
         $editKey = $request->get('key');
         if ($editKey && !array_key_exists($editKey, $templateKeys)) {
+            // Someone navigated to an unrecognized ?key= (typo, stale link, or
+            // tampered URL) - bounce back rather than trying to render an edit
+            // form for a template that doesn't exist.
             $this->flash('error', __('admin.email_templates.unknown_template'));
             return $this->redirect('/admin/email-templates');
         }
@@ -55,10 +72,17 @@ final class EmailTemplateAdminController extends AdminCrudController
         if ($editKey) {
             $stmt = $this->pdo->prepare('SELECT * FROM email_templates WHERE template_key = ? AND language = ?');
             $stmt->execute([$editKey, $lang]);
+            // If no row exists yet, this key/language combo has never been
+            // customized - fall back to an empty shell so the edit form still
+            // has something to bind to (the actual default wording lives
+            // elsewhere, e.g. Mailer's built-in templates, and is used at send
+            // time when no override row exists).
             $current = $stmt->fetch() ?: ['template_key' => $editKey, 'language' => $lang, 'subject' => '', 'body_html' => ''];
         }
 
-        // Which languages already have a saved override for each key, for the list view.
+        // Builds a [template_key][language] => true lookup so the list view can
+        // show which languages already have a custom override saved, without
+        // running a query per cell.
         $existing = [];
         foreach ($this->pdo->query('SELECT template_key, language FROM email_templates')->fetchAll() as $row) {
             $existing[$row['template_key']][$row['language']] = true;
@@ -76,8 +100,10 @@ final class EmailTemplateAdminController extends AdminCrudController
         ]);
     }
 
+    /** Saves (inserts or overwrites) one template's subject/body for a specific language. */
     public function save(Request $request): Response
     {
+        // Blocks a forged template-edit submission (CSRF) - see Controller::requireCsrf().
         if ($csrfFailure = $this->requireCsrf()) {
             return $csrfFailure;
         }
@@ -87,6 +113,10 @@ final class EmailTemplateAdminController extends AdminCrudController
 
         $key = (string)$request->post('template_key', '');
         $postLang = (string)$request->post('language', 'en');
+        // Whitelist check: both the template key and the language must be ones
+        // this installation actually knows about/has enabled - stops a
+        // tampered form from writing rows for a made-up template key or a
+        // disabled language.
         if (!array_key_exists($key, $templateKeys) || !array_key_exists($postLang, $availableLangs)) {
             $this->flash('error', __('admin.email_templates.invalid_template_or_lang'));
             return $this->redirect('/admin/email-templates');
@@ -94,6 +124,10 @@ final class EmailTemplateAdminController extends AdminCrudController
 
         $subject = trim((string)$request->post('subject', ''));
         $body = (string)$request->post('body_html', '');
+        // "Upsert" - one query either creates the first override for this
+        // key/language pair or overwrites the existing one, keyed on
+        // (template_key, language) presumably being a unique constraint in
+        // the schema.
         $stmt = $this->pdo->prepare(
             'INSERT INTO email_templates (template_key, language, subject, body_html) VALUES (?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE subject = VALUES(subject), body_html = VALUES(body_html)'
@@ -101,6 +135,9 @@ final class EmailTemplateAdminController extends AdminCrudController
         $stmt->execute([$key, $postLang, $subject, $body]);
 
         $this->flash('success', __('admin.email_templates.flash_saved'));
+        // Redirects back to the list with the just-edited language pre-selected
+        // (?lang=...) so the admin lands back where they were instead of
+        // resetting to the default language.
         return Response::redirect(rtrim(SITE_URL, '/') . '/admin/email-templates?lang=' . urlencode($postLang));
     }
 }

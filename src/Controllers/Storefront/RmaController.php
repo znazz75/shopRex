@@ -21,12 +21,12 @@ use ShopRex\Services\SettingsRepository;
  */
 final class RmaController extends Controller
 {
-    private const MAX_ATTACHMENTS = 5;
-    private const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
-    private const MAX_FILE_BYTES = 5 * 1024 * 1024;
+    private const MAX_ATTACHMENTS = 5; // Hard cap on how many defect photos a single ticket can carry.
+    private const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']; // Whitelist of file extensions accepted for attachments - checked alongside the content-sniff below, not instead of it.
+    private const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB per-photo upload size limit.
 
-    private readonly \PDO $pdo;
-    private readonly SettingsRepository $settings;
+    private readonly \PDO $pdo; // Raw DB handle for the item/eligibility and existing-tickets queries below.
+    private readonly SettingsRepository $settings; // Used here only to look up the shop's notification email address.
 
     public function __construct(Request $request, Container $container)
     {
@@ -35,6 +35,7 @@ final class RmaController extends Controller
         $this->settings = $container->make(SettingsRepository::class);
     }
 
+    /** Shows the RMA form for one order: every item, whether each is currently eligible for a statutory and/or manufacturer warranty claim, and any tickets already filed against it. */
     public function show(Request $request): Response
     {
         if ($guard = $this->requireCustomerLogin()) {
@@ -54,6 +55,13 @@ final class RmaController extends Controller
         ]);
     }
 
+    /**
+     * Validates and creates an RMA ticket for one order item, then handles
+     * up to MAX_ATTACHMENTS photo uploads for it, and finally emails both
+     * the customer (confirmation) and the shop (notification). Eligibility
+     * is re-derived server-side (see the SECURITY comment below) rather
+     * than trusted from which claim type the form happened to submit.
+     */
     public function submit(Request $request): Response
     {
         if ($guard = $this->requireCustomerLogin()) {
@@ -68,9 +76,14 @@ final class RmaController extends Controller
         }
 
         $orderItemId = (int)$request->post('order_item_id', 0);
+        // Only two valid claim types exist - anything else submitted
+        // collapses to 'statutory' rather than being stored as-is.
         $claimType = $request->post('warranty_claim_type', 'statutory') === 'manufacturer' ? 'manufacturer' : 'statutory';
         $description = trim((string)$request->post('defect_description', ''));
 
+        // Confirm the submitted order_item_id genuinely belongs to this
+        // order (via itemsWithEligibility(), which is already scoped to
+        // $order) rather than trusting an arbitrary id from the form.
         $item = null;
         foreach ($this->itemsWithEligibility($order) as $row) {
             if ((int)$row['id'] === $orderItemId) {
@@ -97,9 +110,16 @@ final class RmaController extends Controller
         $ticket = RmaTicket::createFor($order->id, $orderItemId, $customer, $claimType, $description, $this->pdo);
 
         $uploadedCount = 0;
+        // PHP's multi-file upload format returns parallel arrays
+        // (name[]/tmp_name[]/error[]/size[] all indexed the same way)
+        // rather than one array per file, so $names/$files are walked by
+        // shared index $i below.
         $files = $request->files('photos');
         $names = (array)($files['name'] ?? []);
         for ($i = 0; $i < count($names) && $uploadedCount < self::MAX_ATTACHMENTS; $i++) {
+            // Skip any slot that isn't a successfully uploaded file (empty
+            // slot, or a PHP-level upload error) rather than treating it as
+            // a failure worth reporting - photo attachments are optional.
             if (($files['error'][$i] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
                 continue;
             }
@@ -124,6 +144,10 @@ final class RmaController extends Controller
             if (!is_dir($dir)) {
                 @mkdir($dir, 0755, true);
             }
+            // Store under a random filename (not the attacker-controlled
+            // original name) so nothing about the on-disk path is
+            // predictable or guessable, and so two different uploads never
+            // collide.
             $storedName = 'rma-' . $ticket->id . '-' . bin2hex(random_bytes(8)) . '.' . $ext;
             if (move_uploaded_file($tmpPath, $dir . $storedName)) {
                 $ticket->addAttachment('rma/' . $storedName, $this->pdo);
@@ -149,7 +173,14 @@ final class RmaController extends Controller
         return $this->redirect('/account/orders/' . urlencode($order->orderNumber) . '/rma');
     }
 
-    /** @return array{0: ?Order, 1: ?Response} */
+    /**
+     * Looks up the order by its number from the URL and confirms the
+     * currently-logged-in customer actually owns it, returning either
+     * [order, null] to proceed or [null, errorResponse] for the caller to
+     * return immediately.
+     *
+     * @return array{0: ?Order, 1: ?Response}
+     */
     private function loadOwnedOrder(Request $request): array
     {
         $orderNumber = (string)$request->routeParam('orderNumber', '');
@@ -159,6 +190,9 @@ final class RmaController extends Controller
         }
         $customer = CustomerAuth::current();
         $isOwner = $customer && $order->customerId !== null && (int)$order->customerId === (int)$customer['id'];
+        // Ownership check - without this, any logged-in customer could file
+        // an RMA ticket against any order just by knowing/guessing its
+        // order number in the URL.
         if (!$isOwner) {
             return [null, Response::html(__('order.not_found_text'), 403)];
         }
@@ -183,13 +217,23 @@ final class RmaController extends Controller
         $stmt->execute([$order->id]);
         $rows = $stmt->fetchAll();
 
+        // Eligibility is based on how much time has passed since the order
+        // was placed, so it's computed once per request from the order's
+        // creation date, not re-read per item.
         $orderDate = new \DateTimeImmutable($order->createdAt ?? 'now');
         foreach ($rows as &$row) {
+            // A deleted product leaves no warranty data to check against -
+            // treat it as not eligible for either claim type rather than
+            // guessing.
             if (!$row['product_id']) {
                 $row['statutory_eligible'] = false;
                 $row['manufacturer_eligible'] = false;
                 continue;
             }
+            // Build a throwaway Product instance just to reuse
+            // RmaTicket::isEligible()'s warranty-window logic, rather than
+            // duplicating that calculation here - only the two warranty
+            // fields it actually reads are populated.
             $product = new Product();
             $product->statutoryWarrantyMonths = (int)$row['statutory_warranty_months'];
             $product->manufacturerWarrantyMonths = $row['manufacturer_warranty_months'] !== null ? (int)$row['manufacturer_warranty_months'] : null;
@@ -201,12 +245,20 @@ final class RmaController extends Controller
         return $rows;
     }
 
-    /** @return array<int, array<int, \ShopRex\Models\RmaTicket>> order_item_id => tickets */
+    /**
+     * Groups every RMA ticket already filed against this order by which
+     * order item it's for, so the view can show "already filed" status
+     * next to each item instead of a flat list. @return array<int,
+     * array<int, \ShopRex\Models\RmaTicket>> order_item_id => tickets
+     */
     private function existingTicketsByItem(Order $order): array
     {
         $stmt = $this->pdo->prepare('SELECT * FROM rma_tickets WHERE order_id = ? ORDER BY created_at DESC');
         $stmt->execute([$order->id]);
         $byItem = [];
+        // Appending onto $byItem[id][] (rather than overwriting $byItem[id])
+        // groups multiple tickets for the same item together, since one
+        // item can have more than one RMA ticket over time.
         foreach ($stmt->fetchAll() as $row) {
             $byItem[(int)$row['order_item_id']][] = (new RmaTicket())->fill($row);
         }

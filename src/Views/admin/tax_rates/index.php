@@ -1,23 +1,31 @@
 <?php
 /**
- * @var array $errors
- * @var array|null $editRate
- * @var array $rates
+ * Admin -> Tax Rates: one combined list+edit-form page (linked from
+ * Settings, not its own nav entry - see the "back to settings" link
+ * below). Same create-vs-edit pattern as Categories: the same form is
+ * used for both, decided by whether $editRate is set.
+ *
+ * @var array      $errors   Validation error messages to show above the form.
+ * @var array|null $editRate The tax rate being edited, or null when the form is in "create new" mode.
+ * @var array      $rates    Every tax rate row (name, rate, is_default, product_count), for the table below.
  */
 ?>
 <div class="page-header">
   <h1><?= e(__('admin.tax_rates')) ?></h1>
   <a class="btn btn-secondary" href="<?= rtrim(SITE_URL, '/') ?>/admin/settings">&larr; <?= e(__('admin.tax_rates.back_to_settings')) ?></a>
 </div>
+<?php /* vatIsEnabled() reads the 'vat_enabled' setting via Services\TaxCalculator - when the shop owner has turned VAT off entirely, tax rates configured here are unused, so show a hint explaining why nothing happens with prices. */ ?>
 <?php if (!vatIsEnabled()): ?>
   <div class="flash flash-info"><?= e(__('admin.tax_rates.vat_disabled_notice')) ?></div>
 <?php endif; ?>
 <?php foreach ($errors as $error): ?><div class="flash flash-error"><?= e($error) ?></div><?php endforeach; ?>
 
 <div class="card">
+  <?php /* Heading text switches between "Add" and "Edit" based on which mode the shared form is in. */ ?>
   <h2 style="margin-top:0;"><?= !empty($editRate['id']) ? e(__('admin.tax_rates.edit_title')) : e(__('admin.tax_rates.add_title')) ?></h2>
   <form method="post" action="<?= rtrim(SITE_URL, '/') ?>/admin/tax-rates" class="form-grid">
     <?= csrfField() ?>
+    <?php /* Empty "id" = create a new rate; a real id = update the existing one with that id. */ ?>
     <input type="hidden" name="id" value="<?= e($editRate['id'] ?? '') ?>">
     <div class="form-group"><label for="name"><?= e(__('admin.products.name')) ?></label><input type="text" id="name" name="name" required placeholder="<?= e(__('admin.tax_rates.name_placeholder')) ?>" value="<?= e($editRate['name'] ?? '') ?>"></div>
     <div class="form-group"><label for="rate"><?= e(__('admin.tax_rates.rate_percent')) ?></label><input type="number" step="0.01" min="0" max="100" id="rate" name="rate" required value="<?= e($editRate['rate'] ?? '') ?>"></div>
@@ -35,6 +43,7 @@
     <tr>
       <td><?= e($r['name']) ?></td>
       <td><?= e($r['rate']) ?>%</td>
+      <?php /* Only one rate at a time is the shop's default (auto-applied to products without an explicit rate); the badge is blank for every other row. */ ?>
       <td><?= $r['is_default'] ? '<span class="badge badge-completed">' . e(__('admin.tax_rates.default_col')) . '</span>' : '' ?></td>
       <td><?= (int)$r['product_count'] ?></td>
       <td>
@@ -47,6 +56,7 @@
       </td>
     </tr>
   <?php endforeach; ?>
+  <?php /* Empty-state row when no tax rates have been configured yet. */ ?>
   <?php if (empty($rates)): ?><tr><td colspan="5"><?= e(__('admin.tax_rates.none_yet')) ?></td></tr><?php endif; ?>
   </tbody>
 </table>

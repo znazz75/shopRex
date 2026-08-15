@@ -1,11 +1,25 @@
 <?php
 /**
- * GD-based cropping for product images. Requires the gd extension (flagged
- * on the install requirements screen if missing).
+ * GD-based cropping for product images - lets an admin pick a rectangle
+ * out of an uploaded product photo (in Admin -> Products -> edit's image
+ * cropper UI) and saves that rectangle as a new, resized image file.
+ * Requires PHP's built-in gd extension (flagged on the install
+ * requirements screen if missing, and cropAndSave() below throws if it's
+ * unavailable at runtime).
+ *
+ * Why this class still exists as-is: one of the "legacy classes kept
+ * as-is" (see CLAUDE.md's "Legacy classes kept as-is" section) - it was
+ * already a proper, single-purpose class before the OOP rewrite, so it's
+ * `require_once`'d as-is from src/container.php rather than ported into
+ * the ShopRex\ namespace. `Controllers\Admin\ProductImageController` calls
+ * its existing static isSupported()/cropAndSave() entry points unchanged.
  */
 
 class ImageProcessor
 {
+    // Maps an image MIME type to the specific GD "load from file" function
+    // that can decode it - looked up by cropAndSave() below so the right
+    // decoder is picked automatically based on what the file actually is.
     private const MIME_LOADERS = [
         'image/jpeg' => 'imagecreatefromjpeg',
         'image/png'  => 'imagecreatefrompng',
@@ -13,6 +27,7 @@ class ImageProcessor
         'image/webp' => 'imagecreatefromwebp',
     ];
 
+    /** Whether the server's PHP build has the gd extension loaded - cropping is impossible without it. */
     public static function isSupported(): bool
     {
         return extension_loaded('gd');
@@ -42,6 +57,11 @@ class ImageProcessor
             throw new RuntimeException('Source image not found.');
         }
 
+        // getimagesize() reads the file's actual header bytes (not its
+        // filename/extension) to determine its true dimensions and MIME
+        // type - this is what MIME_LOADERS is keyed on below, so a
+        // mislabelled or renamed file still gets decoded correctly (or
+        // safely rejected if it isn't really an image at all).
         $info = getimagesize($sourcePath);
         if (!$info) {
             throw new RuntimeException('Could not read image dimensions.');
@@ -59,18 +79,31 @@ class ImageProcessor
         $y = max(0, min($y, $origHeight - 1));
         $cropWidth = max(1, min($cropWidth, $origWidth - $x));
         $cropHeight = max(1, min($cropHeight, $origHeight - $y));
+        // Also cap the requested output size - an absurdly large target
+        // (malicious or just a typo) could otherwise exhaust memory
+        // building the destination canvas below.
         $targetWidth = max(1, min($targetWidth, 4000));
         $targetHeight = max(1, min($targetHeight, 4000));
 
+        // Pick the GD decoder function matching this file's real MIME type
+        // (see MIME_LOADERS above) and use it to load the source image into
+        // memory as a GD image resource.
         $loader = self::MIME_LOADERS[$mime];
         $source = $loader($sourcePath);
         if (!$source) {
             throw new RuntimeException('Could not load source image.');
         }
 
+        // Blank canvas at the final (cropped+resized) dimensions - the
+        // source is drawn onto this below via imagecopyresampled().
         $dest = imagecreatetruecolor($targetWidth, $targetHeight);
 
-        // Preserve transparency for PNG/GIF/WebP.
+        // Preserve transparency for PNG/GIF/WebP: turn off GD's default
+        // alpha-blending so transparent pixels are copied as-is rather than
+        // blended, tell GD to actually save the alpha channel, and fill the
+        // canvas with a fully-transparent color first. Formats without
+        // transparency (JPEG) instead get a plain white background, since
+        // JPEG has no alpha channel to lose data into.
         if (in_array($mime, ['image/png', 'image/gif', 'image/webp'], true)) {
             imagealphablending($dest, false);
             imagesavealpha($dest, true);
@@ -81,6 +114,9 @@ class ImageProcessor
             imagefilledrectangle($dest, 0, 0, $targetWidth, $targetHeight, $white);
         }
 
+        // The actual crop+resize: copies the ($x,$y,$cropWidth,$cropHeight)
+        // rectangle out of $source and resamples (smoothly scales) it to
+        // fill the $targetWidth x $targetHeight canvas.
         imagecopyresampled($dest, $source, 0, 0, $x, $y, $targetWidth, $targetHeight, $cropWidth, $cropHeight);
 
         // Extension always matches the encoder actually used, so a WebP
@@ -96,6 +132,10 @@ class ImageProcessor
         $outputFilename = $outputBasename . '.' . $extension;
         $destPath = rtrim(UPLOAD_DIR, '/\\') . DIRECTORY_SEPARATOR . $outputFilename;
 
+        // Encode and write the file to disk using whichever GD function
+        // matches the chosen extension - the second argument tunes
+        // compression/quality per format (6 = mid-range PNG compression,
+        // 90 = high-quality lossy JPEG/WebP).
         $saved = match (true) {
             $extension === 'png' => imagepng($dest, $destPath, 6),
             $extension === 'gif' => imagegif($dest, $destPath),
@@ -103,6 +143,9 @@ class ImageProcessor
             default => imagejpeg($dest, $destPath, 90),
         };
 
+        // GD image resources are not garbage-collected automatically the
+        // way plain PHP variables are - free the memory explicitly now that
+        // both images have served their purpose.
         imagedestroy($source);
         imagedestroy($dest);
 

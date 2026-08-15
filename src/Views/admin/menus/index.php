@@ -1,16 +1,30 @@
 <?php
 /**
- * @var array $errors
- * @var array|null $editItem
- * @var string $activeLocation
- * @var array $categories
- * @var array $pages
- * @var array $menuTree
+ * Admin -> Menus: one combined list+edit-form page for the two menu
+ * "locations" the storefront renders (main nav and footer nav - see
+ * Services\MenuTreeService / Support\StorefrontMenuRenderer for how these
+ * get rendered on the storefront side). Same create-vs-edit-share-one-form
+ * pattern as Categories/Tax Rates (decided by whether $editItem is set). A
+ * menu item can point at a custom URL, a category, or a CMS page - which
+ * one is picked drives which of the three "link value" inputs further
+ * down is actually used (see toggleLinkValueField() in the <script> at
+ * the bottom). Item ordering is drag-and-drop (jQuery UI "sortable"),
+ * saved via a background AJAX POST to /admin/menus/reorder rather than a
+ * form submit - see the `$('.menu-sortable').sortable(...)` block below.
+ *
+ * @var array       $errors         Validation error messages to show above the form.
+ * @var array|null  $editItem       The menu item being edited, or null when the form is in "create new" mode.
+ * @var string      $activeLocation Which menu is currently being managed: 'main' or 'footer'.
+ * @var array       $categories     Every category, flattened with a 'depth' key, for the "link to a category" dropdown.
+ * @var array       $pages          Every CMS page (slug + title), for the "link to a page" dropdown.
+ * @var array       $menuTree       $activeLocation's menu items as a nested parent/child tree, for the drag-and-drop list rendered by Support\MenuAdminTreeRenderer::render() below.
+ * @var array       $menuTreeFlat   The same items as $menuTree but flattened with a 'depth' key, for the "parent item" dropdown in the edit form (a flat list is what a <select> needs; the nested tree is only useful for the sortable list UI).
  */
 ?>
 <div class="page-header"><h1><?= e(__('admin.menus')) ?></h1></div>
 <?php foreach ($errors as $error): ?><div class="flash flash-error"><?= e($error) ?></div><?php endforeach; ?>
 
+<?php /* Switches which of the two menu locations (main nav / footer nav) the whole rest of this page is managing - everything below (form + item list) only ever shows $activeLocation's items. */ ?>
 <div class="toolbar">
   <a class="btn <?= $activeLocation === 'main' ? '' : 'btn-secondary' ?>" href="<?= rtrim(SITE_URL, '/') ?>/admin/menus?location=main"><?= e(__('admin.menus.main_menu')) ?></a>
   <a class="btn <?= $activeLocation === 'footer' ? '' : 'btn-secondary' ?>" href="<?= rtrim(SITE_URL, '/') ?>/admin/menus?location=footer"><?= e(__('admin.menus.footer_menu')) ?></a>
@@ -34,6 +48,7 @@
     <div class="form-grid">
       <div class="form-group">
         <label for="link_type"><?= e(__('admin.menus.link_type')) ?></label>
+        <?php /* Changing this shows/hides the matching one of the three "link value" inputs below (see toggleLinkValueField() in the <script> block at the bottom) - only one of them is ever actually used, based on this choice. */ ?>
         <select id="link_type" name="link_type" onchange="toggleLinkValueField()">
           <option value="custom" <?= ($editItem['link_type'] ?? 'custom') === 'custom' ? 'selected' : '' ?>><?= e(__('admin.menus.custom_url')) ?></option>
           <option value="category" <?= ($editItem['link_type'] ?? '') === 'category' ? 'selected' : '' ?>><?= e(__('admin.products.category')) ?></option>
@@ -45,6 +60,7 @@
         <select id="parent_id" name="parent_id">
           <option value="">-- <?= e(__('admin.categories.none_top_level')) ?> --</option>
           <?php foreach ($menuTreeFlat as $node): ?>
+            <?php /* Same reasoning as Categories' parent dropdown: a menu item can't be nested under itself, so skip it from its own "parent" options while editing. */ ?>
             <?php if (!empty($editItem['id']) && (int)$node['id'] === (int)$editItem['id']) continue; ?>
             <option value="<?= (int)$node['id'] ?>" <?= (($editItem['parent_id'] ?? null) == $node['id']) ? 'selected' : '' ?>>
               <?= str_repeat('&mdash; ', $node['depth']) ?><?= e($node['label']) ?>
@@ -54,6 +70,7 @@
       </div>
     </div>
 
+    <?php /* Three alternative "where does this link go" inputs, one per link_type. Only one is visible at a time (JS-toggled), and only the visible one's value gets copied into the real "link_value" hidden field on submit (see the form's submit listener in the <script> block below) - none of these three inputs has a "name" attribute of its own, which is what stops the two hidden/inactive ones from also being submitted. */ ?>
     <div class="form-group" id="linkValueCustom">
       <label for="link_value_custom"><?= e(__('admin.menus.url_label')) ?></label>
       <input type="text" id="link_value_custom" data-link-input value="<?= (($editItem['link_type'] ?? 'custom') === 'custom') ? e($editItem['link_value'] ?? '') : '' ?>">
@@ -76,6 +93,7 @@
         <?php endforeach; ?>
       </select>
     </div>
+    <?php /* This is the ONE input actually submitted with the form (name="link_value") - its value gets overwritten from whichever of the three inputs above is currently active, right before submit. */ ?>
     <input type="hidden" name="link_value" id="link_value" value="<?= e($editItem['link_value'] ?? '') ?>">
 
     <div class="form-grid">
@@ -93,22 +111,34 @@
   <p style="color:var(--color-muted);font-size:13px;">
     <?= str_replace('%icon%', '<i class="bi-arrows-move" style="font-style:normal;">&#10021;</i>', e(__('admin.menus.drag_hint'))) ?>
   </p>
+  <?php /* Renders the nested <ul>/<li> drag-and-drop item list (with the ↕ drag handle, edit/delete links per item, etc.) - this Support class is a presentation-only static renderer, not a service; it just turns $menuTree into the matching HTML. See CLAUDE.md's Support/ section. */ ?>
   <?php \ShopRex\Support\MenuAdminTreeRenderer::render($menuTree, $activeLocation); ?>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
 <script>
+  // csrfToken() (a PHP global helper, not a JS function) returns the same
+  // token csrfField() embeds in the form above - reused here so the
+  // background reorder request below can pass CSRF verification too.
   var csrfToken = <?= json_encode(csrfToken()) ?>;
 
+  // Shows only the one "link value" input matching the currently selected
+  // link_type, hiding the other two (see the three linkValue* blocks above).
   function toggleLinkValueField() {
     var type = document.getElementById('link_type').value;
     document.getElementById('linkValueCustom').style.display = type === 'custom' ? 'block' : 'none';
     document.getElementById('linkValueCategory').style.display = type === 'category' ? 'block' : 'none';
     document.getElementById('linkValuePage').style.display = type === 'page' ? 'block' : 'none';
   }
+  // Run once on page load too, so the form starts in the right state for
+  // whichever link_type $editItem already has (not just after a change).
   toggleLinkValueField();
 
+  // Right before the form actually submits, copy whichever of the three
+  // "link value" inputs is currently visible/active into the real hidden
+  // "link_value" field - that's the only one of the four that has a form
+  // "name" and gets sent to the server.
   document.querySelector('form').addEventListener('submit', function () {
     var type = document.getElementById('link_type').value;
     var input = type === 'custom' ? document.getElementById('link_value_custom')
@@ -117,6 +147,12 @@
     document.getElementById('link_value').value = input.value;
   });
 
+  // Makes each menu-item list (rendered by MenuAdminTreeRenderer above)
+  // drag-and-drop sortable via jQuery UI. Dropping an item into a new
+  // position fires this "update" callback, which fires a background POST
+  // to /admin/menus/reorder with the new order of ids - no page reload,
+  // and no relation to the create/edit form above (this reorders existing
+  // items; the form above adds a new one or edits one item's own fields).
   $(function () {
     $('.menu-sortable').sortable({
       handle: '.drag-handle',

@@ -1,12 +1,22 @@
 <?php
 /**
- * @var array $documents
- * @var array $suggestedTypes
- * @var string $lang
- * @var array $availableLangs
- * @var string|null $editType
- * @var array|null $current
- * @var array $errors
+ * Admin -> Legal Documents: list of legal/policy documents (e.g. terms,
+ * privacy policy, imprint) plus a combined add/edit form. A document is
+ * either an uploaded PDF, or generated from typed plain text via
+ * Services\PdfDocumentGenerator (a thin wrapper around the SimplePdf
+ * writer) - see CLAUDE.md's "New legal/compliance domain" section.
+ * Whichever way a document was produced, it's downloadable by anyone at
+ * the public /legal/{type} URL. Document *type* (e.g. "terms") plus
+ * *language* together identify one document - the same type can have a
+ * separate document per enabled language.
+ *
+ * @var array       $documents      Every existing legal document row - type, language, title, source_mode ('uploaded' or 'generated'), updated_at.
+ * @var array       $suggestedTypes Common/expected type slugs (e.g. "terms", "privacy", "imprint") offered as autocomplete suggestions - NOT a hard restriction, the type field still accepts any free-text value (see the <datalist> below).
+ * @var string      $lang           Which language the add/edit form is currently set to.
+ * @var array       $availableLangs Enabled languages as [code => label], for the language dropdown.
+ * @var string|null $editType       The type slug currently being edited (from ?type=), or null when the form is in "create new" mode.
+ * @var array|null  $current        The existing document row for ($editType, $lang), or null/empty when creating a new one.
+ * @var array       $errors         Validation error messages to show above the page.
  */
 $base = rtrim(SITE_URL, '/') . '/admin/legal-documents';
 ?>
@@ -18,6 +28,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/legal-documents';
   <table class="data-table">
     <thead><tr><th><?= e(__('admin.legal_documents.type')) ?></th><th><?= e(__('nav.language')) ?></th><th><?= e(__('admin.legal_documents.title_col')) ?></th><th><?= e(__('admin.legal_documents.source')) ?></th><th><?= e(__('common.date')) ?></th><th></th></tr></thead>
     <tbody>
+      <?php /* source_mode badge distinguishes an admin-uploaded PDF from a document generated in-app from typed text - see this file's top docblock. */ ?>
       <?php foreach ($documents as $d): ?>
         <tr>
           <td><?= e($d['type']) ?></td>
@@ -49,6 +60,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/legal-documents';
     <div class="form-grid">
       <div class="form-group">
         <label for="type"><?= e(__('admin.legal_documents.type')) ?></label>
+        <?php /* list="suggestedTypes" wires this plain text input up to the <datalist> below - the browser shows $suggestedTypes as autocomplete options, but any free-text value the admin types is still accepted (this is a plain <input type="text">, not a <select>). */ ?>
         <input type="text" id="type" name="type" list="suggestedTypes" value="<?= e($current['type'] ?? $editType ?? '') ?>" required>
         <datalist id="suggestedTypes">
           <?php foreach ($suggestedTypes as $t): ?><option value="<?= e($t) ?>"><?php endforeach; ?>
@@ -69,6 +81,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/legal-documents';
       </div>
     </div>
 
+    <?php /* Two alternative ways to produce this document, ONE shared form and ONE action URL - the two buttons below submit the same form, and the controller tells them apart by which button was clicked: the "Generate PDF" button has name="generate_pdf" (so its key/value only reaches the server when THAT button - not the upload one - is what was pressed), converting the typed text via Services\PdfDocumentGenerator. */ ?>
     <div class="form-group">
       <label for="generated_text"><?= e(__('admin.legal_documents.generate_from_text')) ?></label>
       <textarea id="generated_text" name="generated_text" rows="8"><?= e($current['generated_text'] ?? '') ?></textarea>
@@ -78,6 +91,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/legal-documents';
 
     <hr style="margin:20px 0;">
 
+    <?php /* The other option: upload a ready-made PDF instead of generating one - see docs/SECURITY_AUDIT.md finding #6 for the extension + content-sniffed validation this goes through server-side (accept="application/pdf" here is only a client-side file-picker filter, not real validation). */ ?>
     <div class="form-group">
       <label for="document"><?= e(__('admin.legal_documents.or_upload')) ?></label>
       <input type="file" id="document" name="document" accept="application/pdf">

@@ -9,6 +9,11 @@ namespace ShopRex\Support;
  * renderFooterMenu() bare functions that used to be defined inline inside
  * includes/header.php/footer.php - same static-render-class convention as
  * Support\MenuAdminTreeRenderer on the admin side.
+ *
+ * In plain terms: this class draws the actual <nav>/<footer> menu HTML that
+ * visitors see on the storefront, built from whatever an admin configured
+ * under Admin -> Menus. Splitting it out of header.php/footer.php means the
+ * same rendering logic can be reused by every theme package's templates.
  */
 final class StorefrontMenuRenderer
 {
@@ -18,23 +23,35 @@ final class StorefrontMenuRenderer
         foreach ($nodes as $node) {
             $children = $node['children'] ?? [];
             if ($children) {
+                // Has sub-items -> render as a Bootstrap dropdown toggle
+                // (href="#" since the label itself isn't a real link, just
+                // something to click/hover to reveal the dropdown).
                 echo '<li class="nav-item dropdown">';
                 echo '<a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">' . e($node['label']) . '</a>';
                 echo '<ul class="dropdown-menu">';
                 self::renderDropdownItems($children);
                 echo '</ul></li>';
             } else {
+                // Leaf item -> a plain link. resolveMenuUrl() (see
+                // src/view-helpers.php) figures out the actual href based on
+                // this menu item's configured link type (product/category/
+                // page/custom URL/...).
                 echo '<li class="nav-item"><a class="nav-link" href="' . e(resolveMenuUrl($node)) . '"' . ($node['open_new_tab'] ? ' target="_blank" rel="noopener"' : '') . '>' . e($node['label']) . '</a></li>';
             }
         }
     }
 
+    /** Renders the <li> rows inside one open dropdown, including one extra level of nested (indented) sub-items - menus only support two visible levels in the main nav, deeper nesting isn't rendered here. */
     private static function renderDropdownItems(array $nodes): void
     {
         foreach ($nodes as $node) {
             $children = $node['children'] ?? [];
             echo '<li><a class="dropdown-item" href="' . e(resolveMenuUrl($node)) . '"' . ($node['open_new_tab'] ? ' target="_blank" rel="noopener"' : '') . '>' . e($node['label']) . '</a></li>';
             if ($children) {
+                // A dropdown item can itself have children - shown as
+                // extra-indented (ps-4 = left-padding) items directly under
+                // it rather than a further nested dropdown, keeping the
+                // menu simple to navigate with a mouse.
                 foreach ($children as $child) {
                     echo '<li><a class="dropdown-item ps-4" href="' . e(resolveMenuUrl($child)) . '">' . e($child['label']) . '</a></li>';
                 }
@@ -47,6 +64,10 @@ final class StorefrontMenuRenderer
     {
         foreach ($nodes as $node) {
             if (!empty($node['children'])) {
+                // Skip parent items entirely here - the calling template
+                // renders each parent as its own footer column heading and
+                // calls back in for just that parent's children, so
+                // rendering the parent again here would duplicate it.
                 continue;
             }
             echo '<li class="mb-2"><a class="link-light link-underline-opacity-0 link-underline-opacity-75-hover" href="' . e(resolveMenuUrl($node)) . '"' . ($node['open_new_tab'] ? ' target="_blank" rel="noopener"' : '') . '>' . e($node['label']) . '</a></li>';
@@ -80,11 +101,19 @@ final class StorefrontMenuRenderer
     {
         echo '<ul class="sidebar-category-tree">';
         foreach ($nodes as $node) {
+            // "Active" = this exact category is the one currently being
+            // browsed (gets the highlighted style); "in chain" = this
+            // category is an ancestor of the active one, so its own
+            // children should stay expanded to show the path down to it.
             $isActive = $activeCategoryId === (int)$node['id'];
             $isInChain = in_array((int)$node['id'], $activeChainIds, true);
             echo '<li>';
             echo '<a href="' . e(getCategoryUrl($node)) . '"'
                 . ' class="' . ($isActive ? 'active' : '') . '">' . e($node['name']) . '</a>';
+            // Only recurse into (i.e. render/expand) this branch's children
+            // if it's on the path to (or is itself) the active category -
+            // every other branch stays collapsed, keeping a deep catalog's
+            // sidebar readable.
             if (!empty($node['children']) && ($isInChain || $isActive)) {
                 self::renderSidebarCategoryTree($node['children'], $activeCategoryId, $activeChainIds);
             }

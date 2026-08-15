@@ -1,10 +1,19 @@
 <?php
 /**
- * @var array $product
- * @var int $productId
- * @var array $images
- * @var array $errors
+ * Admin -> Products -> Images: upload, caption, reorder (drag-and-drop),
+ * crop-link, set-primary, and delete a single product's gallery images.
+ * Linked from products/edit.php's "manage images" link - only reachable
+ * once a product has been saved (has a real id), since uploads need
+ * something to attach to.
+ *
+ * @var array $product   The product these images belong to (used just for its name in the heading).
+ * @var int   $productId This product's id - used to build every action URL on this page.
+ * @var array $images    This product's gallery images in display order (id, description, cropped_path, is_primary), for the list below.
+ * @var array $errors    Validation/upload error messages to show above the page.
  */
+// Every form action on this page targets the same base URL - built once
+// here instead of repeating rtrim(SITE_URL, '/') + the product id string
+// on every single form below.
 $base = rtrim(SITE_URL, '/') . '/admin/products/' . $productId . '/images';
 ?>
 <div class="page-header">
@@ -15,6 +24,8 @@ $base = rtrim(SITE_URL, '/') . '/admin/products/' . $productId . '/images';
 
 <div class="card">
   <h2 style="margin-top:0;"><?= e(__('admin.product_images.upload_image')) ?></h2>
+  <?php /* accept="image/*" is only a UI hint (the file picker filters by extension client-side) - the real security check (extension + content-sniffed validation, same posture as legal document uploads - see docs/SECURITY_AUDIT.md finding #6) happens server-side in the controller, not here. */ ?>
+  <?php /* This page uses ONE POST endpoint ($base) for every action (upload, caption update, set-primary, delete) - the hidden "action" field is how the controller tells them apart, rather than a separate URL per action. */ ?>
   <form method="post" action="<?= e($base) ?>" enctype="multipart/form-data" class="form-grid">
     <?= csrfField() ?>
     <input type="hidden" name="action" value="upload">
@@ -34,14 +45,17 @@ $base = rtrim(SITE_URL, '/') . '/admin/products/' . $productId . '/images';
     <?php foreach ($images as $img): ?>
       <li data-id="<?= (int)$img['id'] ?>" class="image-manager-row">
         <span class="drag-handle">&#10021;</span>
+        <?php /* Product::imageUrl() prefers the cropped version if one exists, same fallback logic as getPrimaryImage() used elsewhere (see products/index.php). */ ?>
         <img src="<?= e(\ShopRex\Models\Product::imageUrl($img)) ?>" alt="">
         <div class="image-manager-fields">
+          <?php /* Auto-saves the caption as soon as the field loses focus (onblur) - no visible "save" button for this one field, it just submits itself. */ ?>
           <form method="post" action="<?= e($base) ?>" class="inline-desc-form">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="update_description">
             <input type="hidden" name="image_id" value="<?= (int)$img['id'] ?>">
             <input type="text" name="description" value="<?= e($img['description'] ?? '') ?>" placeholder="<?= e(__('admin.product_images.description_caption')) ?>" onblur="this.form.requestSubmit()">
           </form>
+          <?php /* cropped_path is set once an admin has used the separate crop tool (image_crop.php) on this image - shown here just so it's obvious which images still need cropping, without having to open each one. */ ?>
           <div style="font-size:12px;color:var(--color-muted);">
             <?= $img['cropped_path'] ? e(__('admin.product_images.cropped_ready')) : e(__('admin.product_images.not_cropped_yet')) ?>
             <?php if ($img['is_primary']): ?> &middot; <strong><?= e(__('admin.product_images.primary')) ?></strong><?php endif; ?>
@@ -49,6 +63,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/products/' . $productId . '/images';
         </div>
         <div class="image-manager-actions">
           <a class="btn btn-sm btn-secondary" href="<?= rtrim(SITE_URL, '/') ?>/admin/images/<?= (int)$img['id'] ?>/crop"><?= e(__('admin.product_images.crop')) ?></a>
+          <?php /* Only offer "set as primary" on images that AREN'T already the primary one - the current primary image doesn't need a button to become what it already is. */ ?>
           <?php if (!$img['is_primary']): ?>
             <form method="post" action="<?= e($base) ?>" style="display:inline;">
               <?= csrfField() ?>
@@ -84,6 +99,11 @@ $base = rtrim(SITE_URL, '/') . '/admin/products/' . $productId . '/images';
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
 <script>
+  // Same drag-and-drop-then-background-POST reordering pattern as the
+  // admin menus page (see menus/index.php) - dropping an image into a new
+  // position fires a silent POST with the new id order, no page reload,
+  // no relation to the "action"-field forms above (this only reorders,
+  // it doesn't upload/caption/delete anything).
   $(function () {
     $('#imageSortable').sortable({
       handle: '.drag-handle',

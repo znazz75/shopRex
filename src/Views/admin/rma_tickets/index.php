@@ -1,10 +1,20 @@
 <?php
 /**
- * @var array $tickets
- * @var array $statuses
- * @var string $statusFilter
+ * Admin -> RMA Tickets: list of item-level warranty/defect claims (see
+ * Models\RmaTicket and CLAUDE.md's "New legal/compliance domain" section -
+ * eligibility is based on a product's configured warranty length via
+ * RmaTicket::isEligible(); the sibling order-level right-of-withdrawal
+ * flow lives under Admin -> Withdrawals instead).
+ *
+ * @var array  $tickets      The (already status-filtered) RMA ticket rows - order_number, product_name, warranty_claim_type, status, requested_at.
+ * @var array  $statuses     Every possible ticket status (e.g. 'pending', 'approved', 'repaired', 'replaced', 'refunded', 'rejected', 'closed'), for the filter dropdown.
+ * @var string $statusFilter Which status is currently filtered to ('' = all).
  */
 $base = rtrim(SITE_URL, '/') . '/admin/rma-tickets';
+// Same "group by meaning, not exact status string" badge-coloring
+// approach as the Withdrawals list (see that file for the reasoning) -
+// RMA tickets just have more possible positive-outcome statuses since a
+// warranty claim can end in a repair, replacement, or refund.
 $badgeClass = static fn (string $status): string => match ($status) {
     'approved', 'repaired', 'replaced', 'refunded' => 'completed',
     'rejected', 'closed' => 'cancelled',

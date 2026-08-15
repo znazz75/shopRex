@@ -21,11 +21,11 @@ use ShopRex\Services\TranslationOverlay;
  */
 final class ProductController extends Controller
 {
-    private readonly \PDO $pdo;
-    private readonly TranslationOverlay $translations;
-    private readonly DiscountCalculator $discounts;
-    private readonly TaxCalculator $tax;
-    private readonly CategoryTreeService $categories;
+    private readonly \PDO $pdo; // Raw DB handle for the images/options/variant-stock queries below.
+    private readonly TranslationOverlay $translations; // Overlays per-language name/description/option text onto the default-language rows.
+    private readonly DiscountCalculator $discounts; // Computes the product's currently-active discount (if any) for display.
+    private readonly TaxCalculator $tax; // Computes the displayed tax rate/gross price for this product.
+    private readonly CategoryTreeService $categories; // Resolves the breadcrumb path from the product's category up to the root.
 
     public function __construct(Request $request, Container $container)
     {
@@ -37,6 +37,14 @@ final class ProductController extends Controller
         $this->categories = $container->make(CategoryTreeService::class);
     }
 
+    /**
+     * Renders a single product's page: its details, images, option groups
+     * (with per-combination stock for client-side JS), active discount,
+     * and category breadcrumb. A product outside its availability window
+     * or that doesn't exist both render the same 404 "not found" page, so
+     * a visitor can't tell the difference between "never existed" and
+     * "not on sale right now" from the response alone.
+     */
     public function show(Request $request): Response
     {
         $slug = (string)$request->routeParam('slug', '');
@@ -59,10 +67,18 @@ final class ProductController extends Controller
         // exact inverses (see Model docblock), so this round-trip is safe.
         $product->fill($productArray);
 
+        // ORDER BY is_primary DESC, sort_order ASC puts the admin-chosen
+        // "primary" image first (for the main product photo), then the
+        // rest in their configured display order.
         $imgStmt = $this->pdo->prepare('SELECT * FROM product_images WHERE product_id = ? ORDER BY is_primary DESC, sort_order ASC');
         $imgStmt->execute([$product->id]);
         $images = $imgStmt->fetchAll();
 
+        // An "option" is a choice group (e.g. "Size", "Color"); each has
+        // its own set of selectable values, fetched in a second query per
+        // group and attached under $opt['values'] - N+1 queries here, but
+        // a product has only a handful of option groups so this stays
+        // simple rather than a single multi-join query.
         $optStmt = $this->pdo->prepare('SELECT * FROM product_options WHERE product_id = ? ORDER BY sort_order');
         $optStmt->execute([$product->id]);
         $options = $optStmt->fetchAll();
@@ -82,9 +98,15 @@ final class ProductController extends Controller
             $variantStmt = $this->pdo->prepare('SELECT id, stock_quantity FROM product_variants WHERE product_id = ?');
             $variantStmt->execute([$product->id]);
             foreach ($variantStmt->fetchAll() as $variant) {
+                // Every option-value combination that makes up this
+                // variant (e.g. "Size: M" + "Color: Blue").
                 $vvStmt = $this->pdo->prepare('SELECT product_option_value_id FROM product_variant_values WHERE product_variant_id = ?');
                 $vvStmt->execute([$variant['id']]);
                 $valueIds = array_map('intval', array_column($vvStmt->fetchAll(), 'product_option_value_id'));
+                // sort() makes the combination order-independent - matches
+                // Models\Cart::key()'s own sort() so the same combination
+                // always produces the same lookup key regardless of the
+                // order the customer clicked the options in.
                 sort($valueIds);
                 $variantStockByValueIds[implode('-', $valueIds)] = (int)$variant['stock_quantity'];
             }

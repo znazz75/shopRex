@@ -15,18 +15,39 @@
  * "zero dependencies to run" constraint (see CLAUDE.md).
  */
 
+// config/config.php defines constants (SITE_URL, IS_INSTALLED, SHOPREX_VERSION,
+// ...) and starts the hardened session (HttpOnly/SameSite/Secure cookie
+// params) - required first since almost everything below depends on those
+// constants existing.
 require_once __DIR__ . '/../config/config.php';
 
 if (!IS_INSTALLED) {
+    // Nothing has been configured yet (no config/installed.php and no
+    // SHOPREX_DB_* env vars) - send the visitor to the installer instead of
+    // letting the app try (and fail) to use a database connection that
+    // doesn't exist yet. The path differs because admin/index.php lives one
+    // directory deeper than index.php, so it needs an extra "../" to reach
+    // install.php at the project root.
     header('Location: ' . (str_starts_with($_SERVER['REQUEST_URI'] ?? '', '/admin') ? '../install.php' : 'install.php'));
     exit;
 }
 
+// Only safe to open the DB connection once we know the app is installed -
+// database.php's PDO singleton would otherwise fail against a nonexistent
+// database.
 require_once __DIR__ . '/../config/database.php';
 
+// Hand-rolled PSR-4-ish autoloader: whenever PHP encounters an unknown
+// class in the ShopRex\ namespace (e.g. ShopRex\Core\Router), this converts
+// it to a file path under src/ (ShopRex\Core\Router -> src/Core/Router.php)
+// and requires it on demand - this is what lets every class in src/ be used
+// without a manual require_once for each one, and without Composer.
 spl_autoload_register(function (string $class): void {
     $prefix = 'ShopRex\\';
     if (!str_starts_with($class, $prefix)) {
+        // Not one of our classes (could be a built-in PHP class, or a
+        // legacy global-namespace class like \Database) - let some other
+        // autoloader (or nothing) handle it instead.
         return;
     }
     $relative = substr($class, strlen($prefix));
@@ -34,6 +55,9 @@ spl_autoload_register(function (string $class): void {
     if (is_file($path)) {
         require $path;
     }
+    // If the file doesn't exist, silently do nothing - PHP will then throw
+    // its own normal "Class not found" error, which is more informative
+    // than anything this autoloader could add.
 });
 
 // Tier-2 compatibility shim: a handful of untouched legacy view templates

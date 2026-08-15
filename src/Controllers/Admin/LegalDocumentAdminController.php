@@ -19,11 +19,16 @@ final class LegalDocumentAdminController extends AdminCrudController
 {
     /** Suggested out of the box - type is a free string, so this list is just a convenience, not a constraint. */
     private const SUGGESTED_TYPES = ['cancellation_policy', 'warranty_terms'];
+    /** File extensions accepted for an uploaded document - just "pdf" today, kept as a list for symmetry with other upload-guard code and in case that ever needs to grow. */
     private const ALLOWED_EXTENSIONS = ['pdf'];
+    /** Upper size limit for an uploaded document (10 MiB) - prevents an admin (accidentally or otherwise) from filling up disk space with an oversized upload. */
     private const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
+    /** Raw database handle for this controller's queries against `legal_documents`. */
     private readonly \PDO $pdo;
+    /** Renders a typed title + body text into a PDF file on disk - the "generated" alternative to an uploaded PDF. */
     private readonly PdfDocumentGenerator $pdfGenerator;
+    /** Absolute filesystem path (with trailing slash) where every legal document's PDF - uploaded or generated - is stored. */
     private readonly string $uploadDir;
 
     public function __construct(Request $request, Container $container)
@@ -34,10 +39,13 @@ final class LegalDocumentAdminController extends AdminCrudController
         $this->uploadDir = dirname(__DIR__, 3) . '/uploads/legal_documents/';
     }
 
+    /** GET /admin/legal-documents - lists every saved document and, if a type/lang is selected via ?type=&lang=, pre-fills the edit form with it (or a blank "generated" template if that type/language combo doesn't exist yet). */
     public function index(Request $request): Response
     {
         $lang = (string)$request->get('lang', I18n::current());
         $availableLangs = I18n::enabledLanguages();
+        // A tampered/stale ?lang= that no longer maps to an enabled
+        // language falls back to English rather than erroring out.
         if (!array_key_exists($lang, $availableLangs)) {
             $lang = 'en';
         }
@@ -49,6 +57,10 @@ final class LegalDocumentAdminController extends AdminCrudController
         if ($editType) {
             $stmt = $this->pdo->prepare('SELECT * FROM legal_documents WHERE type = ? AND language = ?');
             $stmt->execute([$editType, $lang]);
+            // If no row exists yet for this type/language, hand the view a
+            // blank "generated" template instead of null - lets the same
+            // form markup handle both "editing an existing document" and
+            // "creating one for a language that doesn't have it yet".
             $current = $stmt->fetch() ?: ['type' => $editType, 'language' => $lang, 'title' => '', 'source_mode' => 'generated', 'generated_text' => ''];
         }
 
@@ -59,6 +71,14 @@ final class LegalDocumentAdminController extends AdminCrudController
         ]);
     }
 
+    /**
+     * Creates or replaces the document for one (type, language) pair -
+     * either from typed text turned into a PDF, or from an uploaded PDF
+     * file, depending on which submit button the admin clicked. Because
+     * type+language together identify the document (see the unique lookup
+     * queries below), saving again for the same pair overwrites it rather
+     * than creating a duplicate.
+     */
     public function save(Request $request): Response
     {
         if ($csrfFailure = $this->requireCsrf()) {
@@ -109,6 +129,9 @@ final class LegalDocumentAdminController extends AdminCrudController
             }
         } else {
             $file = $request->file('document');
+            // A file was actually chosen AND PHP reports it uploaded
+            // cleanly - an empty file input or a failed upload both leave
+            // this false, which the checks below treat as "no new file".
             $hasNewFile = !empty($file['name']) && ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK;
 
             $existing = null;
@@ -116,6 +139,9 @@ final class LegalDocumentAdminController extends AdminCrudController
             $existingStmt->execute([$type, $lang]);
             $existing = $existingStmt->fetch();
 
+            // A file is required unless there's already an uploaded
+            // document for this type/language to fall back on (editing
+            // just the title without re-uploading is allowed).
             if (!$hasNewFile && (!$existing || $existing['source_mode'] !== 'uploaded')) {
                 $errors[] = __('admin.legal_documents.file_required');
             }
@@ -180,6 +206,7 @@ final class LegalDocumentAdminController extends AdminCrudController
         return $this->redirect('/admin/legal-documents?type=' . urlencode($type) . '&lang=' . urlencode($lang));
     }
 
+    /** Deletes one document row and its physical PDF file (whichever of uploaded/generated it has) from disk. */
     public function delete(Request $request): Response
     {
         if ($csrfFailure = $this->requireCsrf()) {
@@ -189,7 +216,15 @@ final class LegalDocumentAdminController extends AdminCrudController
         $stmt = $this->pdo->prepare('SELECT * FROM legal_documents WHERE id = ?');
         $stmt->execute([$id]);
         if ($doc = $stmt->fetch()) {
+            // array_filter() drops whichever of the two path columns is
+            // null/empty - a document only ever has one of the two set, so
+            // this loop effectively deletes just the one real file.
             foreach (array_filter([$doc['file_path'], $doc['generated_pdf_path']]) as $file) {
+                // basename() strips any directory component from the
+                // stored filename before rejoining it to $this->uploadDir -
+                // guards against a path-traversal value (e.g. "../../x")
+                // ever having snuck into the column escaping the intended
+                // upload directory.
                 $path = $this->uploadDir . basename($file);
                 if (is_file($path)) {
                     @unlink($path);

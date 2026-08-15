@@ -22,23 +22,49 @@ namespace ShopRex\Core;
  * Templates keep using the same extract()-into-scope style they use today
  * (`<?= e($product['name']) ?>`) - see src/view-helpers.php for the small,
  * fixed set of global functions kept alive for that reason.
+ *
+ * In plain terms: this class turns "a template file name + an array of
+ * data" into a finished HTML string. It's the one place that knows how to
+ * stitch together a page's header, body, and footer, and it's what makes
+ * every controller's render() call work without controllers needing to know
+ * anything about themes, layout files, or PHP's output-buffering functions.
  */
 final class Renderer
 {
     public function __construct(
+        // Base folder that plain (non-themeable) view files and partials
+        // live under (src/Views/storefront or src/Views/admin) - views are
+        // located relative to this.
         private readonly string $viewsDir,
+        // Used to resolve which actual file answers a themeable slot like
+        // 'header.php' - see Core\ThemeManager's docblock.
         private readonly ThemeManager $theme,
     ) {
     }
 
+    /** Exposes the underlying ThemeManager - used e.g. by the admin settings screen to list/switch installed theme packages. */
     public function theme(): ThemeManager
     {
         return $this->theme;
     }
 
+    /**
+     * Renders a full page: the active theme's header, then the given view
+     * file's own markup, then the active theme's footer - this is what a
+     * normal controller's $this->render(...) call ultimately calls.
+     */
     public function render(string $view, array $data = []): string
     {
+        // Output buffering captures everything the required files echo
+        // (rather than sending it straight to the browser) so it can be
+        // returned as a string and wrapped in a Response by the caller,
+        // instead of being written out immediately.
         ob_start();
+        // EXTR_SKIP turns each $data array key into a real local variable
+        // in this function's scope (e.g. $data['product'] becomes
+        // $product) without overwriting any variable that already exists
+        // here (like $view or $this) - this is what lets a template file
+        // reference e.g. $product directly instead of $data['product'].
         extract($data, EXTR_SKIP);
         require $this->theme->resolve('header.php');
         require $this->viewPath($view);
@@ -90,6 +116,7 @@ final class Renderer
         return (string)ob_get_clean();
     }
 
+    /** Builds the full filesystem path to a plain (non-themeable) view file from its dotless name, e.g. 'product/show' -> '.../product/show.php'. */
     private function viewPath(string $view): string
     {
         return $this->viewsDir . '/' . $view . '.php';

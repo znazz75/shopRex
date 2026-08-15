@@ -1,10 +1,21 @@
 
 </main>
 <?php
+/**
+ * Default theme package's footer slot (Core\ThemeManager::resolve()).
+ * Closes the <main> that header.php opened, renders the site footer
+ * (shop blurb, footer menu + legal-document download links, accepted
+ * payment methods, copyright line), then loads JS and closes </body></html>.
+ *
+ * Like header.php, this is required directly by Core\Renderer for every
+ * page (not a class-based view) so every page shares identical chrome
+ * byte-for-byte. Every variable below is computed fresh right here - a
+ * controller never passes anything into this file directly.
+ */
 use ShopRex\Support\StorefrontMenuRenderer;
 
-$footerMenu = getMenuTree('footer');
-$legalDocuments = getLegalDocuments();
+$footerMenu = getMenuTree('footer'); // Nested tree of active 'footer'-location menu items, same shape as the main menu.
+$legalDocuments = getLegalDocuments(); // Every legal document type currently available (Terms, Privacy Policy, etc.) - each downloadable at /legal/{type}, see Models\LegalDocument.
 $shopName = getSetting('shop_name', SITE_NAME);
 $shopEmail = getSetting('shop_email', ADMIN_EMAIL);
 ?>
@@ -14,12 +25,19 @@ $shopEmail = getSetting('shop_email', ADMIN_EMAIL);
       <div class="col-lg-4">
         <h5 class="text-white"><?= e($shopName) ?></h5>
         <p class="small"><?= e(__('footer.tagline')) ?></p>
+        <?php // Only show a mailto link if a shop contact email is actually configured. ?>
         <?php if ($shopEmail): ?><p class="small mb-0"><i class="bi bi-envelope me-1"></i><a class="link-light" href="mailto:<?= e($shopEmail) ?>"><?= e($shopEmail) ?></a></p><?php endif; ?>
       </div>
       <div class="col-lg-4">
         <h6 class="text-white"><?= e(__('footer.links')) ?></h6>
         <ul class="list-unstyled">
+          <?php // Admin-configured footer menu links (e.g. About, Contact) ... ?>
           <?php StorefrontMenuRenderer::renderFooter($footerMenu); ?>
+          <?php // ...followed by one link per legal document (Terms, Privacy
+                // Policy, Withdrawal Policy, ...), each pointing at its
+                // /legal/{type} download route - kept as a separate call
+                // because these aren't real menu_items rows, they're derived
+                // from the legal_documents table instead. ?>
           <?php StorefrontMenuRenderer::renderFooterLegalDocuments($legalDocuments); ?>
         </ul>
       </div>

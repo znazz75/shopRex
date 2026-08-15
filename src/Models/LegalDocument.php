@@ -14,16 +14,26 @@ class LegalDocument extends Model
 {
     protected static string $table = 'legal_documents';
 
+    // Open-ended category string (e.g. "terms", "privacy-policy", "returns")
+    // rather than a fixed ENUM - see class docblock for why.
     public string $type = '';
     public string $language = 'en';
     public string $title = '';
+    // Either 'uploaded' (a real PDF file was uploaded) or 'generated' (built
+    // from admin-typed text via PdfDocumentGenerator) - decides which of the
+    // two path fields below is actually used, see resolvedPdfPath().
     public string $sourceMode = 'uploaded';
+    // Filesystem path to the uploaded PDF, when sourceMode is 'uploaded'.
     public ?string $filePath = null;
+    // The raw admin-typed text, when sourceMode is 'generated' - kept even
+    // after the PDF is rendered so the admin can re-edit and regenerate it.
     public ?string $generatedText = null;
+    // Filesystem path to the PDF rendered from $generatedText.
     public ?string $generatedPdfPath = null;
     public ?string $updatedAt = null;
     public ?string $createdAt = null;
 
+    /** Looks up one legal document by type in the visitor's language, falling back to the default language and then to any language, same idea as Page::findForSlugAndLanguage() - so /legal/{type} always resolves to something if any version of that document exists. */
     public static function findForTypeAndLanguage(string $type, string $lang, \PDO $pdo, string $defaultLang = 'en'): ?self
     {
         $stmt = $pdo->prepare('SELECT * FROM legal_documents WHERE type = ? AND language = ?');
@@ -61,6 +71,8 @@ class LegalDocument extends Model
     {
         $rows = $pdo->query('SELECT type, language, title FROM legal_documents ORDER BY type, language')->fetchAll();
 
+        // Groups the flat row list into [type => [language => row]] so each
+        // distinct document type's available languages can be looked at together.
         $byType = [];
         foreach ($rows as $row) {
             $byType[$row['type']][$row['language']] = $row;
@@ -68,14 +80,20 @@ class LegalDocument extends Model
 
         $result = [];
         foreach ($byType as $type => $byLang) {
+            // Same fallback order as findForTypeAndLanguage(): visitor's
+            // language, else the site default, else whatever language
+            // happens to exist first (reset() grabs the first array value).
             $best = $byLang[$lang] ?? $byLang[$defaultLang] ?? reset($byLang);
             $result[] = ['type' => $type, 'title' => $best['title']];
         }
         return $result;
     }
 
+    /** Inserts this document, or updates the existing row if one already exists for the same (type, language) pair - lets the admin save form just always "save", without needing to separately branch on create-vs-edit. */
     public function upsert(\PDO $pdo): void
     {
+        // ON DUPLICATE KEY UPDATE relies on a unique constraint over
+        // (type, language) in the schema - see sql/schema.sql.
         $stmt = $pdo->prepare(
             'INSERT INTO legal_documents (type, language, title, source_mode, file_path, generated_text, generated_pdf_path)
              VALUES (?, ?, ?, ?, ?, ?, ?)

@@ -7,6 +7,22 @@
  * then creates the first Super Admin account. Once an admin account
  * exists, this script permanently refuses to run again - re-installing
  * over a live shop would wipe/duplicate data.
+ *
+ * Important constraint for anyone editing this file: it deliberately runs
+ * OUTSIDE the normal src/ application stack (Core\Router/App/Container,
+ * the ShopRex\ autoloader, etc.) because its whole job - creating
+ * config/installed.php and the database those depend on - has to work
+ * *before* any of that machinery has anything to connect to. That's why
+ * it require_once's includes/functions.php directly (for db(), e(),
+ * csrfField()/verifyCsrf()/requireCsrf(), getSetting(), redirect(),
+ * writeInstalledConfigFile()) instead of going through
+ * src/bootstrap.php/Container like every other page in the app, and why
+ * this single file mixes PHP request-handling logic with its own inline
+ * HTML template at the bottom rather than using Core\Renderer/a Views file
+ * (again: those depend on the app already being installed). See
+ * includes/functions.php's own docblock for the short list of helpers it
+ * keeps around specifically so this file (and the "legacy classes kept
+ * as-is") can still call them pre-installation.
  */
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/includes/functions.php';
@@ -17,10 +33,16 @@ require_once __DIR__ . '/includes/functions.php';
  */
 function installationIsComplete(): bool
 {
+    // IS_INSTALLED (set in config/config.php) is true only once
+    // config/installed.php exists - without that file there's no DB to
+    // even check, so bail out immediately rather than trying to connect.
     if (!IS_INSTALLED) {
         return false;
     }
     try {
+        // Only required here (not at the top of the file) because it's
+        // only safe to include once config/installed.php - which it
+        // depends on - is confirmed to exist via the IS_INSTALLED check above.
         require_once __DIR__ . '/config/database.php';
         $count = Database::getConnection()->query('SELECT COUNT(*) FROM admin_users')->fetchColumn();
         return (int)$count > 0;
@@ -29,7 +51,12 @@ function installationIsComplete(): bool
     }
 }
 
+// $locked gates the whole rest of the page: once true, only the 'locked'
+// (and 'done', see below) views are reachable - re-running the wizard
+// against an already-set-up shop is refused everywhere.
 $locked = installationIsComplete();
+// Which page of the wizard the visitor asked for via ?step=... - defaults
+// to the very first screen.
 $requestedStep = $_GET['step'] ?? 'welcome';
 // 'done' stays reachable even once $locked is true - otherwise the
 // redirect from the admin-creation step (to install.php?step=done) landed
@@ -58,9 +85,16 @@ function splitSqlStatements(string $sql): array
 {
     $statements = [];
     $current = '';
+    // Tracks whether the character-by-character scan below is currently
+    // "inside" a single-quoted SQL string literal - a semicolon only ends a
+    // statement when this is false.
     $inString = false;
     $length = strlen($sql);
 
+    // Walk the SQL text one byte at a time (a tiny hand-rolled state
+    // machine) rather than a regex/explode, since correctly handling
+    // quoted strings (including escaped '' quotes inside them) needs to
+    // track "am I inside a string right now?" as it goes.
     for ($i = 0; $i < $length; $i++) {
         $char = $sql[$i];
         $current .= $char;
@@ -72,25 +106,43 @@ function splitSqlStatements(string $sql): array
                 $current .= $sql[$i + 1];
                 $i++;
             } else {
+                // A real (non-escaped) quote toggles in/out of string mode.
                 $inString = !$inString;
             }
         } elseif ($char === ';' && !$inString) {
+            // A semicolon outside any string literal really does end a
+            // statement - trim stray whitespace/the semicolon itself and
+            // start accumulating the next statement from scratch.
             $statements[] = trim($current, "; \t\n\r\0\x0B");
             $current = '';
         }
     }
 
+    // Whatever's left after the loop (a final statement with no trailing
+    // semicolon in the file) still counts.
     $tail = trim($current);
     if ($tail !== '') {
         $statements[] = $tail;
     }
 
+    // Drop any accidentally-empty entries (e.g. from consecutive ";;" or
+    // blank stretches of the file).
     return array_filter($statements, fn($s) => $s !== '');
 }
 
+/**
+ * Executes every statement in a .sql file ($path) against $pdo - used for
+ * both schema.sql (always) and seed_demo.sql (only if the visitor opted
+ * into demo content). Returns an array of error messages for any statement
+ * that failed for a reason other than "already exists" (see below), so the
+ * caller can decide whether the overall import actually succeeded.
+ */
 function runSqlFile(PDO $pdo, string $path): array
 {
     $sql = file_get_contents($path);
+    // Strip whole-line SQL comments (lines starting with --) before
+    // splitting into statements - a comment line is never itself part of a
+    // statement, so this keeps splitSqlStatements()'s job simpler.
     $lines = array_filter(explode("\n", $sql), fn($l) => !str_starts_with(ltrim($l), '--'));
     $statements = splitSqlStatements(implode("\n", $lines));
 
@@ -117,6 +169,8 @@ function runSqlFile(PDO $pdo, string $path): array
 // Step: database (POST handling)
 // ---------------------------------------------------------------
 if ($step === 'database' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Halts the request with a 403 if the submitted csrf_token doesn't
+    // match this session's - see includes/functions.php's requireCsrf().
     requireCsrf();
 
     $host = trim($_POST['db_host'] ?? '');
@@ -126,6 +180,10 @@ if ($step === 'database' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $pass = $_POST['db_pass'] ?? '';
     $siteUrl = rtrim(trim($_POST['site_url'] ?? ''), '/');
     $installDemo = !empty($_POST['install_demo']);
+    // Remembered so the form below can re-fill these fields with what the
+    // visitor typed if validation fails, instead of clearing the form.
+    // Deliberately excludes $pass - never echo a submitted password back
+    // into the page, even the visitor's own.
     $old = compact('host', 'port', 'name', 'user', 'siteUrl');
 
     if ($host === '' || $name === '' || $user === '') {
@@ -145,15 +203,25 @@ if ($step === 'database' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!$errors) {
         try {
+            // ERRMODE_EXCEPTION means a failed query throws PDOException
+            // (caught below) rather than needing a manual error check after
+            // every call; ATTR_TIMEOUT keeps a misconfigured/unreachable
+            // host from hanging the request indefinitely.
             $pdo = new PDO(
                 "mysql:host=$host;port=$port;charset=utf8mb4",
                 $user,
                 $pass,
                 [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 5]
             );
+            // Create the database if it doesn't exist yet (the common
+            // case), then switch to it - $name is safe to interpolate here
+            // only because of the strict whitelist regex validated above.
             $pdo->exec("CREATE DATABASE IF NOT EXISTS `$name` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
             $pdo->exec("USE `$name`");
 
+            // Always import the full schema; only import demo sample data
+            // (categories/products) if the visitor opted in via the
+            // checkbox.
             $sqlErrors = runSqlFile($pdo, __DIR__ . '/sql/schema.sql');
             if ($installDemo) {
                 $sqlErrors = array_merge($sqlErrors, runSqlFile($pdo, __DIR__ . '/sql/seed_demo.sql'));
@@ -167,6 +235,10 @@ if ($step === 'database' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (!writeInstalledConfigFile($host, $port, $name, $user, $pass, $siteUrl)) {
                 $errors[] = 'Database is ready, but config/installed.php could not be written. Check that the config/ folder is writable and try again.';
             } else {
+                // Everything succeeded - move on to creating the admin
+                // account. A redirect (not just changing $step) so a page
+                // refresh on the next step doesn't resubmit this database
+                // setup form.
                 redirect('install.php?step=admin');
             }
         } catch (PDOException $e) {
@@ -181,20 +253,33 @@ if ($step === 'database' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($step === 'admin' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf();
 
+    // Can't create an admin account without a database to put it in - if
+    // somehow reached before the database step completed, bounce back to
+    // the start of the wizard rather than fataling.
     if (!IS_INSTALLED) {
         redirect('install.php');
     }
     require_once __DIR__ . '/config/database.php';
     $pdo = Database::getConnection();
 
+    // Defense-in-depth against double-submission (e.g. two browser tabs,
+    // or a page reload after this already succeeded once) - refuse to
+    // create a second Super Admin account.
     if ((int)$pdo->query('SELECT COUNT(*) FROM admin_users')->fetchColumn() > 0) {
         redirect('install.php'); // already completed elsewhere - don't create a second one
     }
 
     $username = trim($_POST['username'] ?? '');
+    // FILTER_VALIDATE_EMAIL returns the email string if valid, or false -
+    // used directly as the "is it valid" check below via `!$email`.
     $email = filter_var($_POST['email'] ?? '', FILTER_VALIDATE_EMAIL);
     $password = $_POST['password'] ?? '';
     $passwordConfirm = $_POST['password_confirm'] ?? '';
+    // Remembered for re-filling the form on validation failure - the raw
+    // (possibly-invalid) submitted email is kept here rather than the
+    // filtered $email, so the visitor sees exactly what they typed.
+    // Passwords are deliberately excluded, same reasoning as the database
+    // step above.
     $old = ['username' => $username, 'email' => $_POST['email'] ?? ''];
 
     if ($username === '') $errors[] = 'Username is required.';
@@ -203,16 +288,24 @@ if ($step === 'admin' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($password !== $passwordConfirm) $errors[] = 'Passwords do not match.';
 
     if (!$errors) {
+        // password_hash() with PASSWORD_DEFAULT (bcrypt) - the password is
+        // never stored in plain text, only its hash.
         $stmt = $pdo->prepare(
             'INSERT INTO admin_users (username, email, password_hash, role, status) VALUES (?, ?, ?, "super_admin", "active")'
         );
         $stmt->execute([$username, $email, password_hash($password, PASSWORD_DEFAULT)]);
+        // Also seed the shop's public contact email setting from the same
+        // address, so Admin -> Settings isn't left blank on a fresh install.
         $pdo->prepare('UPDATE settings SET setting_value = ? WHERE setting_key = "shop_email"')->execute([$email]);
         redirect('install.php?step=done');
     }
 }
 
-// Requirement checks shown on the welcome step
+// Requirement checks shown on the welcome step. Each entry's 'ok' is
+// evaluated right here (not lazily), and the uploads/ check doubles as an
+// action: if the folder doesn't exist yet, @mkdir() tries to create it on
+// the spot (the @ suppresses the warning if that fails - the resulting
+// false from mkdir() is exactly what marks the requirement as failed).
 $requirements = [
     ['label' => 'PHP 8.0 or newer', 'ok' => version_compare(PHP_VERSION, '8.0.0', '>='), 'detail' => 'Detected PHP ' . PHP_VERSION],
     ['label' => 'PDO MySQL extension', 'ok' => extension_loaded('pdo_mysql'), 'detail' => extension_loaded('pdo_mysql') ? 'Enabled' : 'Missing - enable pdo_mysql in php.ini'],
@@ -221,6 +314,9 @@ $requirements = [
     ['label' => 'config/ folder is writable', 'ok' => is_writable(__DIR__ . '/config'), 'detail' => __DIR__ . '/config'],
     ['label' => 'uploads/products/ folder is writable', 'ok' => is_dir(UPLOAD_DIR) ? is_writable(UPLOAD_DIR) : @mkdir(UPLOAD_DIR, 0755, true), 'detail' => UPLOAD_DIR],
 ];
+// array_column(..., 'ok') pulls out just the true/false values from every
+// requirement row; overall requirements are only satisfied if none of them
+// is false.
 $requirementsOk = !in_array(false, array_column($requirements, 'ok'), true);
 ?>
 <!doctype html>
@@ -238,6 +334,12 @@ $requirementsOk = !in_array(false, array_column($requirements, 'ok'), true);
 
     <?php foreach ($errors as $error): ?><div class="flash flash-error"><?= e($error) ?></div><?php endforeach; ?>
 
+    <?php /* One of five wizard screens is rendered below based on $step
+             (computed near the top of this file from ?step= and whether
+             the site is already $locked): 'locked' (already installed),
+             'database' (step 2 form), 'admin' (step 3 form), 'done'
+             (final confirmation), or the 'welcome'/default requirements
+             checklist (step 1). */ ?>
     <?php if ($step === 'locked'): ?>
 
       <div class="flash flash-info">shopRex is already installed. For safety, this installer cannot run again.</div>
@@ -255,6 +357,10 @@ $requirementsOk = !in_array(false, array_column($requirements, 'ok'), true);
         <?= csrfField() ?>
         <div class="form-group">
           <label for="site_url">Site URL</label>
+          <?php /* Re-show whatever the visitor already typed if this form
+                   was redisplayed after a validation error, otherwise
+                   auto-detect it from the current request (detectSiteUrl(),
+                   defined in config/config.php) as a starting guess. */ ?>
           <input type="text" id="site_url" name="site_url" required value="<?= e($old['siteUrl'] ?? detectSiteUrl()) ?>">
           <small style="color:var(--color-muted);">
             Detected automatically from this request, including any subdirectory (e.g.

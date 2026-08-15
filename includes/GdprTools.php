@@ -10,16 +10,37 @@
  * which exempts data needed to meet a legal retention obligation). The
  * customers row itself, and its addresses, are hard-deleted. If your
  * jurisdiction's retention rules differ, adjust deleteCustomer() accordingly.
+ *
+ * Why this class still exists as-is: one of the "legacy classes kept
+ * as-is" (see CLAUDE.md) - `Services\GdprService` is a direct, fully
+ * ported version of this exact logic (exportData()/deleteCustomer()) for
+ * use by the new OOP admin/storefront controllers, but this original class
+ * remains in use as-is too, because admin/cron/gdpr_cleanup.php (a
+ * standalone CLI script run from a real system cron job, outside of any
+ * web request/Container) requires it directly, and includes/GdprCleanup.php
+ * (the automated inactivity sweep) calls GdprTools::deleteCustomer() below
+ * directly rather than through the Services layer.
  */
 class GdprTools
 {
+    /**
+     * Builds the full "everything we know about you" export for one
+     * customer - their profile, saved addresses, and order history
+     * (including each order's line items) - as a plain array ready to be
+     * turned into a downloadable file (e.g. JSON) for the "right to access
+     * / data portability" request. Returns null if the customer id doesn't
+     * exist.
+     */
     public static function exportData(int $customerId): ?array
     {
         $pdo = db();
+        // Only the fields a customer would actually want back - not
+        // internal bookkeeping columns like password hashes.
         $stmt = $pdo->prepare('SELECT id, first_name, last_name, email, phone, language, status, created_at FROM customers WHERE id = ?');
         $stmt->execute([$customerId]);
         $customer = $stmt->fetch();
         if (!$customer) {
+            // No such customer - nothing to export.
             return null;
         }
 
@@ -39,12 +60,20 @@ class GdprTools
         $orderStmt->execute([$customerId]);
         $orders = $orderStmt->fetchAll();
 
+        // Attach each order's line items, and drop the internal numeric
+        // `id` afterwards - it's a database implementation detail with no
+        // meaning to the customer receiving this export, and order_number
+        // already identifies the order in a human-readable way.
         foreach ($orders as &$order) {
             $itemStmt = $pdo->prepare('SELECT product_name, option_summary, sku, quantity, unit_price, total_price FROM order_items WHERE order_id = ?');
             $itemStmt->execute([$order['id']]);
             $order['items'] = $itemStmt->fetchAll();
             unset($order['id']);
         }
+        // Break the by-reference loop variable so a later foreach over
+        // $orders elsewhere can't accidentally overwrite the last order
+        // through a leftover reference (see the same pattern/reasoning in
+        // includes/Cart.php's getActiveShippingMethods()).
         unset($order);
 
         return [
@@ -55,6 +84,12 @@ class GdprTools
         ];
     }
 
+    /**
+     * Permanently anonymises and removes one customer's personal data
+     * ("right to erasure"). Runs as a single all-or-nothing database
+     * transaction so a mid-way failure (e.g. a lost DB connection) can
+     * never leave the customer half-scrubbed, half-intact.
+     */
     public static function deleteCustomer(int $customerId): void
     {
         $pdo = db();
@@ -72,8 +107,12 @@ class GdprTools
             // customer_addresses cascade-deletes via its FK.
             $pdo->prepare('DELETE FROM customers WHERE id = ?')->execute([$customerId]);
 
+            // Both statements succeeded - make the erasure permanent.
             $pdo->commit();
         } catch (Throwable $e) {
+            // Something went wrong partway through - undo everything above
+            // rather than leaving the customer in an inconsistent
+            // half-scrubbed state, then re-throw so the caller knows it failed.
             $pdo->rollBack();
             throw $e;
         }

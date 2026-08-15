@@ -12,6 +12,13 @@
  * required dependencies. For real-world delivery (Gmail/SendGrid/Mailgun/
  * etc.) swap the transport in deliver() for SMTP - see README.md. Every
  * attempt (success or failure) is written to the email_log table.
+ *
+ * Why this class still exists as-is: one of the "legacy classes kept
+ * as-is" (see CLAUDE.md) - it was already a proper, single-purpose class
+ * before the OOP rewrite, so it's `require_once`'d as-is from
+ * src/container.php rather than ported into the ShopRex\ namespace.
+ * `Services\CheckoutService` and other new src/ code call these
+ * send*()/render() static entry points directly, unchanged.
  */
 
 class Mailer
@@ -25,6 +32,9 @@ class Mailer
     {
         [$success, $error] = self::deliver($to, $subject, $htmlBody, $attachmentPath, $attachmentName);
 
+        // Every attempt is logged, success or failure - $template/$orderId
+        // are just metadata for the admin's email log screen, not part of
+        // the message itself.
         $stmt = db()->prepare(
             'INSERT INTO email_log (recipient, subject, template, order_id, status, error_message)
              VALUES (?, ?, ?, ?, ?, ?)'
@@ -34,6 +44,12 @@ class Mailer
         return $success;
     }
 
+    /**
+     * The actual transport call - wraps PHP's built-in mail() and returns
+     * [success, error message or null]. Kept separate from send() so
+     * send() only has to worry about logging, not the mechanics of
+     * building a plain vs. multipart message.
+     */
     private static function deliver(string $to, string $subject, string $htmlBody, ?string $attachmentPath, ?string $attachmentName): array
     {
         $from = 'From: ' . MAIL_FROM_NAME . ' <' . MAIL_FROM . '>';
@@ -42,12 +58,20 @@ class Mailer
             if ($attachmentPath && is_file($attachmentPath)) {
                 // Build a minimal multipart/mixed message by hand (no
                 // Composer dependency) so the invoice PDF can ride along.
+                // A random boundary string separates the HTML body part
+                // from the attachment part - it must not appear anywhere
+                // inside either part's own content, which is why it's
+                // randomly generated rather than a fixed string.
                 $boundary = 'shopRex-' . bin2hex(random_bytes(12));
                 $headers = [
                     'MIME-Version: 1.0',
                     'Content-Type: multipart/mixed; boundary="' . $boundary . '"',
                     $from,
                 ];
+                // First part: the HTML email body. Second part: the PDF
+                // attachment, base64-encoded (chunk_split wraps it at the
+                // standard 76-character line length MIME expects) and
+                // marked as a downloadable attachment with its filename.
                 $body = "--$boundary\r\n"
                     . "Content-Type: text/html; charset=UTF-8\r\n"
                     . "Content-Transfer-Encoding: 8bit\r\n\r\n"
@@ -58,13 +82,20 @@ class Mailer
                     . 'Content-Disposition: attachment; filename="' . ($attachmentName ?: 'invoice.pdf') . "\"\r\n\r\n"
                     . chunk_split(base64_encode(file_get_contents($attachmentPath)))
                     . "--$boundary--";
+                // @ suppresses PHP's own warning on failure - the return
+                // value (false) is checked explicitly right below instead,
+                // and every outcome is already logged by send() regardless.
                 $success = @mail($to, $subject, $body, implode("\r\n", $headers));
             } else {
+                // No attachment - a plain single-part HTML email.
                 $headers = ['MIME-Version: 1.0', 'Content-Type: text/html; charset=UTF-8', $from];
                 $success = @mail($to, $subject, $htmlBody, implode("\r\n", $headers));
             }
             $error = $success ? null : 'mail() returned false (no local MTA configured?)';
         } catch (Throwable $e) {
+            // mail() itself doesn't normally throw, but file_get_contents()
+            // on a missing/unreadable attachment could - catch broadly so a
+            // bad attachment never turns into an uncaught fatal error.
             $success = false;
             $error = $e->getMessage();
         }
@@ -85,6 +116,8 @@ class Mailer
         if ($row) {
             return $row;
         }
+        // Requested language has no override for this template - fall back
+        // to the English row (every template is expected to have one).
         if ($language !== 'en') {
             $stmt->execute([$key, 'en']);
             $row = $stmt->fetch();
@@ -92,9 +125,14 @@ class Mailer
                 return $row;
             }
         }
+        // Neither the requested language nor English has this template at
+        // all - return a blank stand-in rather than null/throwing, so
+        // render() below can still produce a (mostly empty) email instead
+        // of a fatal error.
         return ['subject' => '', 'body_html' => ''];
     }
 
+    /** Replaces every {{name}} placeholder in $text with its matching value from $vars, leaving unmatched placeholders untouched (render() strips those afterwards). */
     private static function applyTokens(string $text, array $vars): string
     {
         foreach ($vars as $name => $value) {
@@ -110,21 +148,35 @@ class Mailer
      */
     public static function render(string $key, string $language, array $vars = []): array
     {
+        // Every template can reference {{shop_name}} without every caller
+        // having to remember to pass it in - merged in first so an
+        // explicit entry in $vars (if any) would still win via array_merge's
+        // "later array wins" rule, though no caller currently overrides it.
         $vars = array_merge(['shop_name' => getSetting('shop_name', SITE_NAME)], $vars);
 
         $template = self::getTemplate($key, $language);
+        // '_header'/'_footer' are special template_key rows (not a real
+        // email on their own) shared by every message - editable once in
+        // Admin -> Email Templates rather than duplicated into each template.
         $header = self::getTemplate('_header', $language)['body_html'] ?? '';
         $footer = self::getTemplate('_footer', $language)['body_html'] ?? '';
 
         $subject = self::applyTokens($template['subject'] ?? '', $vars);
+        // Final email body is always header + this template's body + footer,
+        // each with {{token}} substitution applied independently.
         $body = self::applyTokens($header, $vars)
             . self::applyTokens($template['body_html'] ?? '', $vars)
             . self::applyTokens($footer, $vars);
 
-        // Strip any placeholder no $vars entry covered.
+        // Strip any placeholder no $vars entry covered (e.g. an admin typo
+        // like {{customr_name}}) - shows nothing rather than leaking the
+        // raw "{{...}}" syntax into the sent email.
         $body = preg_replace('/\{\{[a-z0-9_]+\}\}/i', '', $body);
         $subject = preg_replace('/\{\{[a-z0-9_]+\}\}/i', '', $subject);
 
+        // Wrap the assembled body in a minimal, inline-styled HTML shell -
+        // inline CSS is used throughout because most email clients strip
+        // <style> blocks / external stylesheets.
         $html = '<!doctype html><html><body style="font-family: Arial, sans-serif; color:#222; background:#f5f5f5; padding:24px;">'
             . '<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;">' . $body . '</div>'
             . '</body></html>';
@@ -132,10 +184,21 @@ class Mailer
         return ['subject' => $subject, 'html' => $html];
     }
 
+    /**
+     * Builds the HTML order-items table + totals summary that fills the
+     * {{order_items_table}} token in the order_confirmation template.
+     * NOTE: the column headers/labels here ("Item"/"Qty"/"Price"/
+     * "Subtotal"/"Shipping"/"Tax"/"Total") are hardcoded English strings,
+     * not run through __()/the per-language template system - so even a
+     * German or French order confirmation email currently embeds this
+     * table with English labels.
+     */
     private static function renderOrderItemsTable(array $order, array $items): string
     {
         $rows = '';
         foreach ($items as $item) {
+            // Chosen option combination (if any) shown as a small grey
+            // subtitle under the product name, same idea as the invoice PDF.
             $option = $item['option_summary'] ? '<br><small style="color:#666;">' . e($item['option_summary']) . '</small>' : '';
             $rows .= '<tr style="border-bottom:1px solid #e5e7eb;">'
                 . '<td style="padding:8px 4px;">' . e($item['product_name']) . $option . '</td>'
@@ -155,6 +218,13 @@ class Mailer
             . '</table>';
     }
 
+    /**
+     * Sends the order confirmation email right after checkout completes,
+     * with the PDF invoice attached when one already exists for this
+     * order. Bank-transfer/invoice payment methods get their payment
+     * instructions inlined into the email since there's no external
+     * payment page to send the customer to.
+     */
     public static function sendOrderConfirmation(array $order, array $items): bool
     {
         $lang = $order['language'] ?? 'en';
@@ -180,6 +250,11 @@ class Mailer
             'bank_transfer_details' => $bankDetails,
         ]);
 
+        // Attach the order's invoice PDF if one has already been generated
+        // (InvoiceGenerator runs before this in the checkout flow) and the
+        // file still exists on disk - silently sends without an attachment
+        // otherwise, since a missing invoice shouldn't block the order
+        // confirmation from going out at all.
         $invoicePath = null;
         $invoiceName = null;
         try {
@@ -197,9 +272,13 @@ class Mailer
         return self::send($order['customer_email'], $rendered['subject'], $rendered['html'], 'order_confirmation', (int)$order['id'], $invoicePath, $invoiceName);
     }
 
+    /** Notifies a customer that their order's status changed (e.g. "shipped") - includes any admin-written note verbatim, HTML-escaped with line breaks preserved. */
     public static function sendOrderStatusUpdate(array $order): bool
     {
         $lang = $order['language'] ?? 'en';
+        // nl2br() turns the admin's plain-text newlines into <br> tags so
+        // multi-line notes still look right in HTML email; e() escapes the
+        // note's actual text first so an admin's note can't inject markup.
         $notes = !empty($order['admin_notes']) ? '<p>' . nl2br(e($order['admin_notes'])) . '</p>' : '';
         $rendered = self::render('order_status_update', $lang, [
             'order_number' => $order['order_number'],
@@ -209,6 +288,7 @@ class Mailer
         return self::send($order['customer_email'], $rendered['subject'], $rendered['html'], 'order_status_update', (int)$order['id']);
     }
 
+    /** Sends the "welcome, here's your account" email right after a new customer registers. Returns false without sending if the customer id doesn't exist. */
     public static function sendRegistrationWelcome(int $customerId): bool
     {
         $stmt = db()->prepare('SELECT * FROM customers WHERE id = ?');
@@ -225,8 +305,11 @@ class Mailer
         return self::send($customer['email'], $rendered['subject'], $rendered['html'], 'registration_welcome');
     }
 
+    /** Sends a "click here to reset your password" email containing a one-time reset link built from $token (already generated/stored by the caller). */
     public static function sendPasswordReset(array $customer, string $token): bool
     {
+        // urlencode() so a token containing URL-unsafe characters can't
+        // break the query string it's embedded in.
         $resetLink = rtrim(SITE_URL, '/') . '/reset-password?token=' . urlencode($token);
         $rendered = self::render('password_reset', $customer['language'] ?? 'en', [
             'customer_name' => $customer['first_name'],
@@ -235,6 +318,7 @@ class Mailer
         return self::send($customer['email'], $rendered['subject'], $rendered['html'], 'password_reset');
     }
 
+    /** Sends the GDPR inactivity-deletion warning email (see includes/GdprCleanup.php) telling a customer their account will be erased on $deletionDate unless they log back in. */
     public static function sendAccountDeletionWarning(array $customer, string $deletionDate): bool
     {
         $rendered = self::render('account_deletion_warning', $customer['language'] ?? 'en', [

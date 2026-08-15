@@ -1,21 +1,36 @@
 <?php
 /**
- * @var bool $isSuperAdmin
- * @var int $productCount
- * @var int $lowStockCount
- * @var array $lowStock
- * @var float $revenueToday
- * @var float $revenueMonth
- * @var int $orderCount
- * @var int $pendingOrders
- * @var int $customerCount
- * @var int $testOrderCount
- * @var array $recentOrders
+ * Admin -> Dashboard (the landing page after login). Shows a grid of
+ * summary stat cards plus two small tables (recent orders, low-stock
+ * products). Financial/order figures below are only ever computed for
+ * real (non-test) orders - see CLAUDE.md's "Test accounts" section: any
+ * order placed by an `is_test_account` customer is tagged
+ * `is_test_order = 1` and excluded from every financial figure, including
+ * these dashboard numbers.
+ *
+ * @var bool  $isSuperAdmin   True for the 'super_admin' role, false for
+ *                             'manager'. Gates the money/order stats and the
+ *                             recent-orders table below, since 'finance' is
+ *                             a capability managers don't have (see
+ *                             CLAUDE.md's Core\Auth\AdminAuth section) -
+ *                             a manager only ever sees the
+ *                             products/low-stock cards.
+ * @var int   $productCount   Total number of products in the catalog.
+ * @var int   $lowStockCount  Count of products at/below their stock threshold.
+ * @var array $lowStock       The actual low-stock product rows (id, name, sku, stock_quantity, stock_threshold), for the table below.
+ * @var float $revenueToday   Sum of today's real (non-test) order totals.
+ * @var float $revenueMonth   Sum of this calendar month's real order totals.
+ * @var int   $orderCount     Total count of real orders.
+ * @var int   $pendingOrders  Count of real orders still awaiting fulfillment.
+ * @var int   $customerCount  Total registered customers.
+ * @var int   $testOrderCount How many test orders exist (only surfaced as an FYI card - never mixed into the revenue/order figures above).
+ * @var array $recentOrders   The most recent handful of real orders, for the table below.
  */
 ?>
 <div class="page-header"><h1><?= e(__('admin.dashboard')) ?></h1></div>
 
 <div class="stat-grid">
+  <?php /* Money and order-volume figures are hidden from 'manager' accounts entirely - they only see product/stock cards below. */ ?>
   <?php if ($isSuperAdmin): ?>
     <div class="stat-card"><div class="label"><?= e(__('admin.dashboard.revenue_today')) ?></div><div class="value"><?= formatPrice($revenueToday) ?></div></div>
     <div class="stat-card"><div class="label"><?= e(__('admin.dashboard.revenue_month')) ?></div><div class="value"><?= formatPrice($revenueMonth) ?></div></div>
@@ -25,11 +40,13 @@
   <?php endif; ?>
   <div class="stat-card"><div class="label"><?= e(__('admin.products')) ?></div><div class="value"><?= $productCount ?></div></div>
   <div class="stat-card"><div class="label"><?= e(__('admin.dashboard.low_stock_items')) ?></div><div class="value"><?= $lowStockCount ?></div></div>
+  <?php /* Only shown when there actually are test orders, and only to super admins - it's just an informational count, not a figure meant to be acted on. */ ?>
   <?php if ($isSuperAdmin && $testOrderCount > 0): ?>
     <div class="stat-card"><div class="label"><?= e(__('admin.dashboard.test_orders')) ?></div><div class="value"><?= $testOrderCount ?></div></div>
   <?php endif; ?>
 </div>
 
+<?php /* Recent-orders table: super admin only, same reasoning as the stat cards above. */ ?>
 <?php if ($isSuperAdmin): ?>
 <div class="card">
   <h2 style="margin-top:0;"><?= e(__('admin.dashboard.recent_orders')) ?></h2>
@@ -40,6 +57,7 @@
       <tr>
         <td>
           <a href="<?= rtrim(SITE_URL, '/') ?>/admin/orders/<?= (int)$order['id'] ?>"><?= e($order['order_number']) ?></a>
+          <?php /* Belt-and-suspenders label: $recentOrders is expected to already exclude test orders, but this badge would still flag one if it ever slipped through. */ ?>
           <?php if ($order['is_test_order']): ?> <span class="badge badge-pending"><?= e(__('admin.dashboard.test_badge')) ?></span><?php endif; ?>
         </td>
         <td><?= e($order['customer_email']) ?></td>
@@ -49,6 +67,7 @@
         <td><?= e(formatLocalDate($order['created_at'], true)) ?></td>
       </tr>
     <?php endforeach; ?>
+    <?php /* Friendly empty-state row instead of a blank table when there are no orders yet. */ ?>
     <?php if (empty($recentOrders)): ?><tr><td colspan="6"><?= e(__('admin.dashboard.no_orders_yet')) ?></td></tr><?php endif; ?>
     </tbody>
   </table>
@@ -68,6 +87,7 @@
         <td><?= (int)$p['stock_threshold'] ?></td>
       </tr>
     <?php endforeach; ?>
+    <?php /* Empty-state row shown when nothing is low on stock. */ ?>
     <?php if (empty($lowStock)): ?><tr><td colspan="4"><?= e(__('admin.dashboard.well_stocked')) ?></td></tr><?php endif; ?>
     </tbody>
   </table>

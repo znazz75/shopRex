@@ -15,17 +15,24 @@ namespace ShopRex\Services;
  */
 final class CategoryTreeService
 {
+    // Memoizes tree() for the rest of the request - the category tree is
+    // read repeatedly per request (menus, breadcrumbs, sidebars) but rarely
+    // changes mid-request, so it's cheap to build once and reuse.
     private ?array $treeCache = null;
 
     public function __construct(private readonly \PDO $pdo, private readonly SettingsRepository $settings)
     {
     }
 
+    /** Turns a flat list of category rows (each with a parent_id) into a nested tree, attaching each row's direct children under a 'children' key - the recursion walks down one parent_id level at a time. */
     public function buildTree(array $rows, ?int $parentId = null): array
     {
         $branch = [];
         foreach ($rows as $row) {
             $rowParent = $row['parent_id'] !== null ? (int)$row['parent_id'] : null;
+            // Only rows whose parent_id matches the level we're currently
+            // building belong in this branch; everything else gets picked up
+            // by a deeper recursive call instead.
             if ($rowParent === $parentId) {
                 $row['children'] = $this->buildTree($rows, (int)$row['id']);
                 $branch[] = $row;
@@ -34,6 +41,7 @@ final class CategoryTreeService
         return $branch;
     }
 
+    /** The full category tree, root categories first with their descendants nested under 'children' - built once per request and cached. */
     public function tree(): array
     {
         if ($this->treeCache === null) {
@@ -43,6 +51,7 @@ final class CategoryTreeService
         return $this->treeCache;
     }
 
+    /** Collapses a nested tree back into a flat, depth-first list with a 'depth' field added to each row - used for rendering an indented <select> or admin list where nesting needs to show as indentation rather than actual nesting. */
     public function flatten(array $tree, int $depth = 0): array
     {
         $flat = [];
@@ -51,6 +60,9 @@ final class CategoryTreeService
             unset($node['children']);
             $node['depth'] = $depth;
             $flat[] = $node;
+            // Recurse into children before moving to the next sibling, so
+            // the result is depth-first order (parent immediately followed
+            // by its own subtree, not grouped by level).
             if ($children) {
                 $flat = array_merge($flat, $this->flatten($children, $depth + 1));
             }
@@ -58,15 +70,22 @@ final class CategoryTreeService
         return $flat;
     }
 
+    /** Every category ID in $categoryId's subtree, including itself - used to make "show products from this category and all its subcategories" filters work. */
     public function descendantIds(int $categoryId): array
     {
         $rows = $this->pdo->query('SELECT id, parent_id FROM categories')->fetchAll();
+        // Builds a [parent_id => [child_id, child_id, ...]] adjacency map
+        // once, so descendants can be walked in memory instead of running a
+        // new query per level.
         $childrenOf = [];
         foreach ($rows as $row) {
             $parent = $row['parent_id'] !== null ? (int)$row['parent_id'] : 0;
             $childrenOf[$parent][] = (int)$row['id'];
         }
 
+        // Breadth/depth-first walk (order doesn't matter here) using $queue
+        // as a work list: start at $categoryId itself, and keep pulling
+        // children off the queue until there are none left to explore.
         $ids = [$categoryId];
         $queue = [$categoryId];
         while ($queue) {
@@ -91,6 +110,10 @@ final class CategoryTreeService
             $byId[(int)$row['id']] = $row;
         }
 
+        // Walks upward from $categoryId to its parent, grandparent, etc.,
+        // prepending each one (array_unshift) so the final array reads
+        // root-first / current-category-last, matching how a breadcrumb
+        // trail is displayed left to right.
         $path = [];
         $current = $byId[$categoryId] ?? null;
         while ($current) {
@@ -115,6 +138,7 @@ final class CategoryTreeService
         return rtrim(SITE_URL, '/') . '/category/' . urlencode($category['slug']);
     }
 
+    /** Recursively searches a (sub)tree for the node with id $categoryId - used e.g. to resolve a menu item's linked category without a fresh database query, since the tree is already cached in memory. */
     public function findNode(array $nodes, int $categoryId): ?array
     {
         foreach ($nodes as $node) {
@@ -131,6 +155,7 @@ final class CategoryTreeService
         return null;
     }
 
+    /** True if $candidateParentId is $categoryId itself or somewhere in its subtree - e.g. used to stop an admin from re-parenting a category underneath its own descendant, which would create a cycle. */
     public function isOrDescendant(int $categoryId, int $candidateParentId): bool
     {
         return in_array($candidateParentId, $this->descendantIds($categoryId), true);
@@ -139,6 +164,9 @@ final class CategoryTreeService
     /** Per-language category intro text - falls back $lang -> default language -> null. */
     public function introText(int $categoryId, string $lang): ?string
     {
+        // Fetches both the requested language and the default language in one
+        // query (IN (?, ?)) rather than two round trips, since the fallback
+        // below needs both anyway.
         $stmt = $this->pdo->prepare('SELECT language, intro_text FROM category_translations WHERE category_id = ? AND language IN (?, ?)');
         $defaultLang = $this->settings->get('default_language', 'en');
         $stmt->execute([$categoryId, $lang, $defaultLang]);
@@ -148,7 +176,11 @@ final class CategoryTreeService
             $byLang[$row['language']] = $row['intro_text'];
         }
 
+        // Fallback chain: requested language, then the default language,
+        // then nothing at all (no intro text configured for this category).
         $text = $byLang[$lang] ?? $byLang[$defaultLang] ?? null;
+        // Treats a saved-but-blank/whitespace-only intro the same as "not
+        // set", so an empty <p></p> block doesn't get rendered.
         return ($text !== null && trim($text) !== '') ? $text : null;
     }
 }

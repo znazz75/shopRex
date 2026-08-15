@@ -9,11 +9,22 @@ use ShopRex\Core\Response;
 use ShopRex\Services\CategoryTreeService;
 use ShopRex\Services\MenuTreeService;
 
-/** Direct port of admin/menus.php + admin/menu_reorder.php. */
+/**
+ * Direct port of admin/menus.php + admin/menu_reorder.php. Manages the two
+ * navigation menus (main nav + footer) an admin builds out of items that
+ * link to a category, a CMS page, or a custom URL - including nesting one
+ * item under another and drag-and-drop reordering (reorder()). Exists as
+ * its own controller rather than folding into CategoryAdminController/
+ * PageAdminController because a menu item is its own entity with its own
+ * tree structure, independent of the category/page tree it might point at.
+ */
 final class MenuAdminController extends AdminCrudController
 {
+    /** Raw database handle for this controller's queries against `menu_items`. */
     private readonly \PDO $pdo;
+    /** Builds/queries the menu item tree (parent/child nesting) for one location ("main" or "footer"). */
     private readonly MenuTreeService $menus;
+    /** The category tree service - reused here for its generic flatten() helper (see index()) and to populate the "link to category" picker. */
     private readonly CategoryTreeService $categories;
 
     public function __construct(Request $request, Container $container)
@@ -24,6 +35,7 @@ final class MenuAdminController extends AdminCrudController
         $this->categories = $container->make(CategoryTreeService::class);
     }
 
+    /** GET /admin/menus - lists one location's ("main"/"footer") menu tree and, if ?edit=id is set, pre-fills the edit form for that item. */
     public function index(Request $request): Response
     {
         $errors = [];
@@ -39,6 +51,9 @@ final class MenuAdminController extends AdminCrudController
             }
         }
 
+        // Which location's tab is showing - defaults to whatever location
+        // the item being edited belongs to, or "main" if nothing's being
+        // edited; then whitelisted to the only two valid locations either way.
         $activeLocation = $request->get('location', $editItem['location'] ?? 'main');
         $activeLocation = in_array($activeLocation, ['main', 'footer'], true) ? $activeLocation : 'main';
 
@@ -54,6 +69,7 @@ final class MenuAdminController extends AdminCrudController
         return $this->render('menus/index', [...compact('errors', 'editItem', 'activeLocation', 'categories', 'pages', 'menuTree', 'menuTreeFlat'), 'pageTitle' => __('admin.menus')]);
     }
 
+    /** Handles both the delete button and the create/update form for a single menu item, all posted to the same route (distinguished by whether delete_id is present). */
     public function save(Request $request): Response
     {
         if ($csrfFailure = $this->requireCsrf()) {
@@ -85,9 +101,16 @@ final class MenuAdminController extends AdminCrudController
         if ($id && $parentId === $id) {
             $errors[] = __('admin.menus.cannot_be_own_parent');
         }
+        // Prevents creating a cycle: an item can't be moved to be a child
+        // of one of its own descendants, since that would make the tree
+        // unreachable/infinite when walked top-down.
         if ($id && $parentId && $this->menus->isOrDescendant($id, $parentId)) {
             $errors[] = __('admin.menus.cannot_move_under_own_subitem');
         }
+        // A parent item must belong to the same menu location as the
+        // child - stops an item from ending up nested under a parent that
+        // only renders on the OTHER menu (main vs footer), where it would
+        // never actually display.
         if (!$errors && $parentId) {
             $parentStmt = $this->pdo->prepare('SELECT location FROM menu_items WHERE id = ?');
             $parentStmt->execute([$parentId]);
@@ -103,6 +126,10 @@ final class MenuAdminController extends AdminCrudController
                 $stmt->execute([$location, $parentId, $label, $linkType, $linkValue, $openNewTab, $isActive, $id]);
                 $this->flash('success', __('admin.menus.flash_updated'));
             } else {
+                // New items are appended to the end of their location's
+                // list - one more than the current highest sort_order
+                // (COALESCE handles the "no items yet" case, where MAX()
+                // would otherwise return null).
                 $maxSortStmt = $this->pdo->prepare('SELECT COALESCE(MAX(sort_order),0) FROM menu_items WHERE location = ?');
                 $maxSortStmt->execute([$location]);
                 $maxSort = (int)$maxSortStmt->fetchColumn();
@@ -149,6 +176,11 @@ final class MenuAdminController extends AdminCrudController
             return Response::json(['success' => false, 'error' => 'Missing location or ids'], 400);
         }
 
+        // $ids arrives already in the new display order (the browser drag
+        // handler sends the list top-to-bottom) - so each item's position
+        // in the array IS its new sort_order, just written straight back
+        // to the row. "AND location = ?" stops one drag operation from
+        // being able to touch an item that belongs to the other menu.
         $stmt = $this->pdo->prepare('UPDATE menu_items SET sort_order = ? WHERE id = ? AND location = ?');
         foreach ($ids as $index => $id) {
             $stmt->execute([$index, $id, $location]);

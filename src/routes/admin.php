@@ -6,6 +6,13 @@
  * the v2.00 cutover along with the physical admin/*.php files; the
  * sidebar nav in src/Views/admin/layout/header.php only ever generates
  * these clean paths).
+ *
+ * In plain terms: this is the same idea as src/routes/web.php, but for
+ * every /admin/... URL. The big difference from the storefront table is
+ * that almost every route here is chained with ->capability('...') - see
+ * Core\Auth\AdminAuth::CAPABILITIES for what each capability string
+ * actually allows, and Core\Router::dispatch() for where that check
+ * actually happens (before the controller is even built).
  */
 
 use ShopRex\Controllers\Admin\AdminAuthController;
@@ -33,6 +40,10 @@ use ShopRex\Controllers\Admin\WithdrawalAdminController;
 use ShopRex\Core\Router;
 use ShopRex\Core\Container;
 
+// Same "returns a closure, called by admin/index.php with its own
+// $router/$container" pattern as src/routes/web.php - see that file's
+// comment on the signature for why $container is accepted even though it's
+// unused by any route registered below.
 return function (Router $router, Container $container): void {
     // Not capability-gated (there's no admin session yet to check).
     // Registered first since a broken login route would take the whole
@@ -74,6 +85,9 @@ return function (Router $router, Container $container): void {
     $router->get('/admin/inventory', [InventoryAdminController::class, 'index'])->capability('inventory');
     $router->post('/admin/inventory/adjust', [InventoryAdminController::class, 'adjust'])->capability('inventory');
 
+    // Customer management, including the test-account tooling used to place
+    // orders that never touch real stock/finance figures - see CLAUDE.md's
+    // "Test accounts" section.
     $router->get('/admin/customers', [CustomerAdminController::class, 'index'])->capability('customers');
     $router->post('/admin/customers/create-test-user', [CustomerAdminController::class, 'createTestUser'])->capability('customers');
     $router->get('/admin/customers/{id}', [CustomerAdminController::class, 'show'])->capability('customers');

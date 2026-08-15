@@ -15,8 +15,13 @@ use ShopRex\Services\I18n;
  */
 final class RmaAdminController extends AdminCrudController
 {
+    // Every valid lifecycle state an RMA ticket can be in, in roughly the
+    // order a ticket progresses through them - used both to validate incoming
+    // status values and to populate the status dropdown in the views.
     private const STATUSES = ['submitted', 'under_review', 'awaiting_return', 'approved', 'rejected', 'repaired', 'replaced', 'refunded', 'closed'];
 
+    // Shared PDO connection - used for the hand-written list/lookup queries;
+    // the ticket itself is still loaded/mutated through the RmaTicket model.
     private readonly \PDO $pdo;
 
     public function __construct(Request $request, Container $container)
@@ -25,9 +30,14 @@ final class RmaAdminController extends AdminCrudController
         $this->pdo = $container->make(\PDO::class);
     }
 
+    /** Lists RMA (return/warranty) tickets, optionally filtered to one status, each row annotated with its order number, product, and customer email. */
     public function index(Request $request): Response
     {
         $statusFilter = (string)$request->get('status', '');
+        // Inner JOINs to orders/order_items are safe (every ticket must
+        // reference a real order and order line), but customers is a LEFT JOIN
+        // + COALESCE because a guest checkout has no customers row - falls back
+        // to the order's own guest_email in that case.
         $sql = "SELECT rt.*, o.order_number, oi.product_name, COALESCE(c.email, o.guest_email) AS customer_email
                 FROM rma_tickets rt
                 JOIN orders o ON o.id = rt.order_id
@@ -46,6 +56,7 @@ final class RmaAdminController extends AdminCrudController
         return $this->render('rma_tickets/index', ['tickets' => $tickets, 'statuses' => self::STATUSES, 'statusFilter' => $statusFilter, 'pageTitle' => __('admin.rma_tickets')]);
     }
 
+    /** Shows one RMA ticket's full detail (order, the specific order line it's about, and any photo attachments the customer uploaded) for review. */
     public function show(Request $request): Response
     {
         $id = (int)$request->routeParam('id', 0);
@@ -57,6 +68,8 @@ final class RmaAdminController extends AdminCrudController
 
         $order = $this->fetchOrder((int)$ticket->orderId);
         $item = $this->fetchOrderItem((int)$ticket->orderItemId);
+        // Up to 5 customer-uploaded photos documenting the defect - see
+        // Models\RmaTicket::attachments() / CLAUDE.md's legal/compliance domain notes.
         $attachments = $ticket->attachments();
 
         $pageTitle = __('admin.rma_view.title', ['number' => $order['order_number'] ?? '']);
@@ -66,8 +79,10 @@ final class RmaAdminController extends AdminCrudController
         ]);
     }
 
+    /** Applies a status change and/or resolution notes to a ticket from the review form, optionally emailing the customer about the update. */
     public function save(Request $request): Response
     {
+        // Blocks a forged status-change submission (CSRF) - see Controller::requireCsrf().
         if ($csrfFailure = $this->requireCsrf()) {
             return $csrfFailure;
         }
@@ -78,14 +93,23 @@ final class RmaAdminController extends AdminCrudController
             return $this->redirect('/admin/rma-tickets');
         }
 
+        // Whitelist check: fall back to the ticket's existing status if the
+        // submitted value isn't one of the known STATUSES, so a tampered form
+        // value can't set an invalid/unexpected status.
         $newStatus = in_array($request->post('status', ''), self::STATUSES, true) ? $request->post('status') : $ticket->status;
         $adminNotes = trim((string)$request->post('admin_notes', ''));
         $resolutionNotes = trim((string)$request->post('resolution_notes', ''));
 
+        // transitionTo() is the shared CustomerRequest behavior (also used by
+        // WithdrawalRequest) that records the status change plus which admin
+        // made it and any notes - see CLAUDE.md's legal/compliance domain notes.
         $ticket->transitionTo($newStatus, $this->pdo, $this->admin['id'], $adminNotes !== '' ? $adminNotes : null);
         $this->pdo->prepare('UPDATE rma_tickets SET resolution_notes = ? WHERE id = ?')
             ->execute([$resolutionNotes !== '' ? $resolutionNotes : null, $id]);
 
+        // Emailing the customer is opt-in per save (a checkbox on the form) -
+        // an admin can update internal notes/status without necessarily
+        // notifying the customer every single time.
         if ($request->post('notify_customer')) {
             $this->notifyCustomer($ticket, $newStatus, $resolutionNotes);
         }
@@ -94,21 +118,30 @@ final class RmaAdminController extends AdminCrudController
         return $this->redirect('/admin/rma-tickets/' . $id);
     }
 
+    /** Sends the customer an email about their RMA ticket's status update, in the order's own language (not the admin's). */
     private function notifyCustomer(RmaTicket $ticket, string $status, string $resolutionNotes): void
     {
         $order = $this->fetchOrder((int)$ticket->orderId);
         if (!$order) {
             return;
         }
+        // Prefer the language the order was originally placed in; fall back to
+        // whatever the current request's language is if the order never
+        // recorded one - keeps the notification readable to the customer even
+        // for old orders predating this column.
         $lang = $order['language'] ?: I18n::current();
         $rendered = \Mailer::render('rma_ticket_status_update', $lang, [
             'order_number'      => e($order['order_number']),
             'status'            => e($status),
+            // e() escapes the notes for HTML, nl2br() then turns the admin's
+            // typed line breaks into <br> tags so the email keeps their
+            // paragraph structure.
             'resolution_notes'  => $resolutionNotes !== '' ? '<p>' . nl2br(e($resolutionNotes)) . '</p>' : '',
         ]);
         \Mailer::send($order['customer_email'], $rendered['subject'], $rendered['html'], 'rma_ticket_status_update', (int)$order['id']);
     }
 
+    /** Looks up one order by id, with its customer's (or guest's) email/name attached - shared by show() and notifyCustomer(). */
     private function fetchOrder(int $id): ?array
     {
         $stmt = $this->pdo->prepare(
@@ -120,6 +153,7 @@ final class RmaAdminController extends AdminCrudController
         return $stmt->fetch() ?: null;
     }
 
+    /** Looks up the single order line item an RMA ticket is about. */
     private function fetchOrderItem(int $id): ?array
     {
         $stmt = $this->pdo->prepare('SELECT * FROM order_items WHERE id = ?');
