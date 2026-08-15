@@ -41,6 +41,27 @@ function detectSiteUrl(): string
     $scheme = isHttpsRequest() ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 
+    // Prefer $_SERVER['SCRIPT_NAME'] (Apache's own, already-resolved URL
+    // path for the currently-running script) over comparing filesystem
+    // paths: dirname(__DIR__) is resolved through PHP's own symlink
+    // handling, which silently loses the subdirectory whenever the
+    // project root itself is reached via a symlinked/junctioned htdocs
+    // entry (a common local-dev setup, e.g. XAMPP) - DOCUMENT_ROOT never
+    // gets that same resolution, so the two stopped being comparable.
+    // detectSiteUrl() is only ever meaningfully called from install.php
+    // itself (nothing else is reachable pre-install - see IS_INSTALLED
+    // above), so "the directory install.php is in" is exactly the answer.
+    if (isset($_SERVER['SCRIPT_NAME'])) {
+        $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
+        if ($basePath === '.') {
+            $basePath = '';
+        }
+        return $scheme . '://' . $host . $basePath;
+    }
+
+    // CLI/cron fallback (no SCRIPT_NAME) - best-effort filesystem
+    // comparison; only used as an inert placeholder default before
+    // installation, never rendered anywhere.
     $documentRoot = isset($_SERVER['DOCUMENT_ROOT']) ? str_replace('\\', '/', rtrim($_SERVER['DOCUMENT_ROOT'], '/\\')) : '';
     $projectRoot = str_replace('\\', '/', rtrim(dirname(__DIR__), '/\\')); // parent of config/ = project root
 
@@ -68,7 +89,7 @@ if (!defined('DB_PASS')) define('DB_PASS', getenv('SHOPREX_DB_PASS') ?: '');
 // "Versioning" section for the project's release/bump convention. Kept as
 // a literal string (not computed from the file) so it's available even in
 // contexts that would rather not touch the filesystem on every request.
-define('SHOPREX_VERSION', '2.00');
+define('SHOPREX_VERSION', '2.01');
 define('SITE_NAME', 'shopRex');
 if (!defined('SITE_URL')) define('SITE_URL', getenv('SHOPREX_SITE_URL') ?: detectSiteUrl());
 if (!defined('ADMIN_EMAIL')) define('ADMIN_EMAIL', getenv('SHOPREX_ADMIN_EMAIL') ?: 'admin@example.com');

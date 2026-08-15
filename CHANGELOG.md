@@ -8,6 +8,20 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [2.01] - 2026-08-15
+
+### Fixed
+- `detectSiteUrl()` (`config/config.php`, prefills the installer's Site
+  URL field) dropped the subdirectory whenever the project root itself
+  was reached through a symlinked/junctioned web root - a common local
+  setup (e.g. XAMPP's `htdocs/shopRex` pointed at the real project
+  directory via a symlink), since it compared `DOCUMENT_ROOT` against a
+  PHP-resolved (symlink-following) project path that no longer shared a
+  prefix with it. Found by running a genuine fresh install through the
+  wizard for the first time since the v2.00 rewrite. Now derived from
+  `$_SERVER['SCRIPT_NAME']` instead, which stays correct regardless of
+  symlinks.
+
 ## [2.00] - 2026-08-14
 
 A full architectural rewrite from procedural PHP to an OOP structure, plus
