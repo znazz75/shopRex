@@ -244,8 +244,8 @@ $requirementsOk = !in_array(false, array_column($requirements, 'ok'), true);
       <p>To reconfigure the database or reset the admin account, edit
          <code>config/installed.php</code> or your database directly.</p>
       <p style="margin-top:20px;">
-        <a class="btn" href="admin/login.php">Go to Admin Login</a>
-        <a class="btn btn-secondary" href="index.php">View Storefront</a>
+        <a class="btn" href="admin/login">Go to Admin Login</a>
+        <a class="btn btn-secondary" href="./">View Storefront</a>
       </p>
 
     <?php elseif ($step === 'database'): ?>
@@ -303,8 +303,8 @@ $requirementsOk = !in_array(false, array_column($requirements, 'ok'), true);
       <div class="flash flash-success">Setup complete!</div>
       <p>Your database is ready and your Super Admin account has been created.</p>
       <p style="margin-top:20px;">
-        <a class="btn" href="admin/login.php">Go to Admin Login</a>
-        <a class="btn btn-secondary" href="index.php">View Storefront</a>
+        <a class="btn" href="admin/login">Go to Admin Login</a>
+        <a class="btn btn-secondary" href="./">View Storefront</a>
       </p>
       <p style="font-size:13px;color:var(--color-muted);margin-top:20px;">
         Before going live: review <code>config/config.php</code> for mail/PayPal/Stripe

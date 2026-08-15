@@ -8,6 +8,16 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [2.02] - 2026-08-15
+
+### Fixed
+- `install.php`'s "already installed" and "setup complete" screens both
+  linked to `admin/login.php` and `index.php` - the exact two `.php`-
+  suffixed paths the v2.00 cutover removed. `install.php` wasn't rewritten
+  as part of that cutover (it's a standalone script that has to run
+  before the rest of the app's dependencies exist), so these two
+  hardcoded links were missed. Now point at `admin/login` and `./`.
+
 ## [2.01] - 2026-08-15
 
 ### Fixed
