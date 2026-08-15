@@ -147,10 +147,20 @@ CREATE TABLE product_images (
     image_path VARCHAR(255) NOT NULL,
     cropped_path VARCHAR(255) NULL,
     description VARCHAR(255) NULL,
+    -- The crop SELECTION rectangle (in the original image's own pixel
+    -- coordinates) - what the admin dragged out in the Cropper.js widget.
     crop_x INT UNSIGNED NULL,
     crop_y INT UNSIGNED NULL,
     crop_width INT UNSIGNED NULL,
     crop_height INT UNSIGNED NULL,
+    -- The chosen OUTPUT/target size the selection above was resized to -
+    -- a deliberately separate pair of columns from crop_width/crop_height
+    -- above (which stays the *selection* size, not the size it was scaled
+    -- to), so Controllers\Admin\ImageCropController can pre-fill the
+    -- "Output Width/Height" fields with what was actually used last time
+    -- when an admin reopens the crop tool, instead of the selection size.
+    crop_target_width INT UNSIGNED NULL,
+    crop_target_height INT UNSIGNED NULL,
     sort_order INT NOT NULL DEFAULT 0,
     is_primary TINYINT(1) NOT NULL DEFAULT 0,
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE

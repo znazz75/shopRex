@@ -110,65 +110,78 @@ final class RmaController extends Controller
         $customer = CustomerAuth::current();
         $ticket = RmaTicket::createFor($order->id, $orderItemId, $customer, $claimType, $description, $this->pdo);
 
-        $uploadedCount = 0;
-        // PHP's multi-file upload format returns parallel arrays
-        // (name[]/tmp_name[]/error[]/size[] all indexed the same way)
-        // rather than one array per file, so $names/$files are walked by
-        // shared index $i below.
-        $files = $request->files('photos');
-        $names = (array)($files['name'] ?? []);
-        for ($i = 0; $i < count($names) && $uploadedCount < self::MAX_ATTACHMENTS; $i++) {
-            // Skip any slot that isn't a successfully uploaded file (empty
-            // slot, or a PHP-level upload error) rather than treating it as
-            // a failure worth reporting - photo attachments are optional.
-            if (($files['error'][$i] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-                continue;
-            }
-            $tmpPath = $files['tmp_name'][$i];
-            $originalName = (string)$files['name'][$i];
-            $ext = strtolower((string)pathinfo($originalName, PATHINFO_EXTENSION));
+        // From here on, the ticket itself already exists and is the part
+        // that actually matters - everything below (photo attachments,
+        // notification emails) is best-effort. Every step here does its
+        // own DB write, and this app's PDO connection is configured to
+        // throw on any SQL error (config/database.php), so wrapping this
+        // in one try/catch means a single failed insert/query (a dropped
+        // connection, a full disk, etc.) can't turn into an uncaught 500
+        // that leaves the customer with no confirmation their ticket was
+        // actually received, or tempts them into resubmitting a duplicate.
+        try {
+            $uploadedCount = 0;
+            // PHP's multi-file upload format returns parallel arrays
+            // (name[]/tmp_name[]/error[]/size[] all indexed the same way)
+            // rather than one array per file, so $names/$files are walked by
+            // shared index $i below.
+            $files = $request->files('photos');
+            $names = (array)($files['name'] ?? []);
+            for ($i = 0; $i < count($names) && $uploadedCount < self::MAX_ATTACHMENTS; $i++) {
+                // Skip any slot that isn't a successfully uploaded file (empty
+                // slot, or a PHP-level upload error) rather than treating it as
+                // a failure worth reporting - photo attachments are optional.
+                if (($files['error'][$i] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                    continue;
+                }
+                $tmpPath = $files['tmp_name'][$i];
+                $originalName = (string)$files['name'][$i];
+                $ext = strtolower((string)pathinfo($originalName, PATHINFO_EXTENSION));
 
-            if (!in_array($ext, self::ALLOWED_EXTENSIONS, true)) {
-                continue;
-            }
-            if (($files['size'][$i] ?? 0) > self::MAX_FILE_BYTES) {
-                continue;
-            }
-            // Content-sniff, not just the extension - matches the fix
-            // documented for admin/product_images.php (docs/SECURITY_AUDIT.md
-            // finding #6): an attacker-renamed non-image file fails this check.
-            if (@getimagesize($tmpPath) === false) {
-                continue;
+                if (!in_array($ext, self::ALLOWED_EXTENSIONS, true)) {
+                    continue;
+                }
+                if (($files['size'][$i] ?? 0) > self::MAX_FILE_BYTES) {
+                    continue;
+                }
+                // Content-sniff, not just the extension - matches the fix
+                // documented for admin/product_images.php (docs/SECURITY_AUDIT.md
+                // finding #6): an attacker-renamed non-image file fails this check.
+                if (@getimagesize($tmpPath) === false) {
+                    continue;
+                }
+
+                $dir = dirname(__DIR__, 3) . '/uploads/rma/';
+                if (!is_dir($dir)) {
+                    @mkdir($dir, 0755, true);
+                }
+                // Store under a random filename (not the attacker-controlled
+                // original name) so nothing about the on-disk path is
+                // predictable or guessable, and so two different uploads never
+                // collide.
+                $storedName = 'rma-' . $ticket->id . '-' . bin2hex(random_bytes(8)) . '.' . $ext;
+                if (move_uploaded_file($tmpPath, $dir . $storedName)) {
+                    $ticket->addAttachment('rma/' . $storedName, $this->pdo);
+                    $uploadedCount++;
+                }
             }
 
-            $dir = dirname(__DIR__, 3) . '/uploads/rma/';
-            if (!is_dir($dir)) {
-                @mkdir($dir, 0755, true);
-            }
-            // Store under a random filename (not the attacker-controlled
-            // original name) so nothing about the on-disk path is
-            // predictable or guessable, and so two different uploads never
-            // collide.
-            $storedName = 'rma-' . $ticket->id . '-' . bin2hex(random_bytes(8)) . '.' . $ext;
-            if (move_uploaded_file($tmpPath, $dir . $storedName)) {
-                $ticket->addAttachment('rma/' . $storedName, $this->pdo);
-                $uploadedCount++;
-            }
+            $lang = I18n::current();
+            $received = Mailer::render('rma_ticket_received', $lang, [
+                'customer_name' => e($customer['first_name'] ?? ''), 'order_number' => e($order->orderNumber),
+                'product_name' => e($item['product_name']),
+            ]);
+            Mailer::send($customer['email'] ?? $order->customerEmail, $received['subject'], $received['html'], 'rma_ticket_received', $order->id);
+
+            $shopEmail = $this->settings->get('shop_email', ADMIN_EMAIL);
+            $notifyShop = Mailer::render('rma_ticket_notify_shop', $lang, [
+                'order_number' => e($order->orderNumber), 'product_name' => e($item['product_name']),
+                'warranty_claim_type' => e($claimType), 'defect_description' => nl2br(e($description)),
+            ]);
+            Mailer::send((string)$shopEmail, $notifyShop['subject'], $notifyShop['html'], 'rma_ticket_notify_shop', $order->id);
+        } catch (\Throwable $e) {
+            error_log('RMA ticket #' . $ticket->id . ' created, but attachment/notification step failed: ' . $e->getMessage());
         }
-
-        $lang = I18n::current();
-        $received = Mailer::render('rma_ticket_received', $lang, [
-            'customer_name' => e($customer['first_name'] ?? ''), 'order_number' => e($order->orderNumber),
-            'product_name' => e($item['product_name']),
-        ]);
-        Mailer::send($customer['email'] ?? $order->customerEmail, $received['subject'], $received['html'], 'rma_ticket_received', $order->id);
-
-        $shopEmail = $this->settings->get('shop_email', ADMIN_EMAIL);
-        $notifyShop = Mailer::render('rma_ticket_notify_shop', $lang, [
-            'order_number' => e($order->orderNumber), 'product_name' => e($item['product_name']),
-            'warranty_claim_type' => e($claimType), 'defect_description' => nl2br(e($description)),
-        ]);
-        Mailer::send((string)$shopEmail, $notifyShop['subject'], $notifyShop['html'], 'rma_ticket_notify_shop', $order->id);
 
         $this->flash('success', __('rma.submitted'));
         return $this->redirect('/account/orders/' . urlencode($order->orderNumber) . '/rma');

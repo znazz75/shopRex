@@ -8,6 +8,50 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [3.01] - 2026-08-15
+
+Fixes the remaining items from the codebase-wide comment sweep's flagged
+findings.
+
+### Fixed
+- `ProductAdminController::delete()` deleted a product's DB row without
+  cleaning up its uploaded image files - every dependent DB row already
+  gets cleaned up automatically by `ON DELETE CASCADE` foreign keys, but
+  the actual files on disk never do. Now unlinks every attached
+  image/cropped-image file first, same as `ProductImageController`'s own
+  single-image delete action already did.
+- `CartController::update()` called `Cart::getItems()` (which re-hydrates
+  the entire cart from the database) once per posted quantity field
+  inside its loop, instead of once total - an O(n²) query pattern for a
+  cart with n distinct lines. Hoisted the one needed lookup (product id
+  per cart-line key) above the loop.
+- `RmaController::submit()` and `WithdrawalController::submit()` both
+  created their DB record first, then ran photo-upload/notification-email
+  steps that could still throw (this app's PDO connection is configured
+  to raise an exception on any SQL error) - a failure there would have
+  surfaced as an uncaught 500 even though the ticket/request had already
+  been saved, leaving the customer with no confirmation it went through.
+  Both now wrap those best-effort steps in a try/catch that logs any
+  failure but still shows the normal success confirmation, since the
+  record itself is the part that actually matters.
+- `ImageCropController` only ever persisted the crop *selection*
+  rectangle's size (`crop_width`/`crop_height`), never the *output* size
+  it was resized to - so reopening the crop tool on an already-cropped
+  image pre-filled the "Output Width"/"Output Height" fields with the
+  previous selection's pixel size instead of the previous output size.
+  Added two new columns (`crop_target_width`/`crop_target_height`) to
+  `product_images` to record that separately.
+
+### Investigated, not a bug
+- `AuthController::forgotPassword()`'s rate limiter only records a new
+  failed attempt when the request *isn't* already throttled, which looks
+  at first glance like a throttled request "does nothing" toward
+  extending the lockout. Checked against `login()`'s identical pattern in
+  the same file and `Services\RateLimiter`'s sliding-window design (age
+  out attempts older than the window, no escalating penalty) - this is
+  the intentional, consistent behavior everywhere the class is used, not
+  a gap specific to the password-reset form.
+
 ## [3.00] - 2026-08-15
 
 A sanctioned exception to the `+0.01` versioning convention (like v2.00

@@ -8,7 +8,7 @@
  * "cropped" version - the one products/images.php and getPrimaryImage()
  * prefer to show once it exists.
  *
- * @var array $image  The image being cropped - image_path (the original upload), product_id/product_name, and any previously-saved crop_x/crop_y/crop_width/crop_height (the SELECTION rectangle from the last crop, not the output size - see the target_width/height fields below - so re-opening this tool restores the last crop selection instead of starting blank).
+ * @var array $image  The image being cropped - image_path (the original upload), product_id/product_name, any previously-saved crop_x/crop_y/crop_width/crop_height (the SELECTION rectangle from the last crop, so re-opening this tool restores the last selection instead of starting blank), and crop_target_width/crop_target_height (the OUTPUT size that selection was resized to last time - a separate pair of columns, since a selection's own size and what it was scaled to are two different things).
  * @var array $errors Validation error messages to show above the page.
  */
 $saveUrl = rtrim(SITE_URL, '/') . '/admin/images/' . (int)$image['id'] . '/crop';
@@ -35,15 +35,15 @@ $saveUrl = rtrim(SITE_URL, '/') . '/admin/images/' . (int)$image['id'] . '/crop'
     <input type="hidden" name="crop_w" id="crop_w">
     <input type="hidden" name="crop_h" id="crop_h">
 
-    <?php /* Separate from the crop rectangle above: this is the final output image's pixel dimensions - the crop rectangle gets resized to exactly this size server-side (see ImageCropController). NOTE: the server only ever stores the crop SELECTION's width/height (crop_width/crop_height in $image), not the target/output size actually used last time - so this field's prefilled value is really "same as the last selection size", defaulting to 800 for a fresh crop, not a remembered output size. */ ?>
+    <?php /* Separate from the crop rectangle above: this is the final output image's pixel dimensions - the crop rectangle gets resized to exactly this size server-side (see ImageCropController). Pre-filled from crop_target_width/crop_target_height - the actual output size used last time - falling back to the selection size (crop_width/crop_height) and then a flat 800 default only when this image has never been cropped before at all. */ ?>
     <div class="form-grid">
       <div class="form-group">
         <label for="target_width"><?= e(__('admin.image_crop.output_width')) ?></label>
-        <input type="number" id="target_width" name="target_width" min="1" value="<?= (int)($image['crop_width'] ?: 800) ?>">
+        <input type="number" id="target_width" name="target_width" min="1" value="<?= (int)($image['crop_target_width'] ?: $image['crop_width'] ?: 800) ?>">
       </div>
       <div class="form-group">
         <label for="target_height"><?= e(__('admin.image_crop.output_height')) ?></label>
-        <input type="number" id="target_height" name="target_height" min="1" value="<?= (int)($image['crop_height'] ?: 800) ?>">
+        <input type="number" id="target_height" name="target_height" min="1" value="<?= (int)($image['crop_target_height'] ?: $image['crop_height'] ?: 800) ?>">
       </div>
     </div>
     <p style="color:var(--color-muted);font-size:13px;"><?= e(__('admin.image_crop.drag_hint')) ?></p>

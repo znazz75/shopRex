@@ -54,7 +54,19 @@ final class ProductAdminController extends AdminCrudController
         return $this->render('products/index', compact('search', 'products') + ['pageTitle' => __('admin.products')]);
     }
 
-    /** Permanently deletes one product by id, after checking the submitted form carries a valid CSRF token. */
+    /**
+     * Permanently deletes one product by id, after checking the submitted
+     * form carries a valid CSRF token. Every dependent row (translations,
+     * images, options/values, variants, cart_items, inventory_log) is
+     * cleaned up automatically by the DB's ON DELETE CASCADE foreign keys
+     * (see sql/schema.sql); order_items instead uses ON DELETE SET NULL,
+     * so historical orders keep their line items - deleting a product
+     * never rewrites past order history. The one thing the database can't
+     * clean up on its own is the actual uploaded image *files* on disk
+     * (product_images rows disappear via cascade, but their files don't),
+     * so those are unlinked explicitly first, same as
+     * ProductImageController's own single-image delete action does.
+     */
     public function delete(Request $request): Response
     {
         // Blocks a cross-site request forgery attempt (a malicious page tricking
@@ -63,7 +75,26 @@ final class ProductAdminController extends AdminCrudController
         if ($csrfFailure = $this->requireCsrf()) {
             return $csrfFailure;
         }
-        $this->pdo->prepare('DELETE FROM products WHERE id = ?')->execute([(int)$request->post('delete_id')]);
+        $productId = (int)$request->post('delete_id');
+
+        $stmt = $this->pdo->prepare('SELECT image_path, cropped_path FROM product_images WHERE product_id = ?');
+        $stmt->execute([$productId]);
+        foreach ($stmt->fetchAll() as $image) {
+            // array_filter() drops empty/null values - cropped_path may be
+            // null if that image was never cropped, so this only attempts
+            // to delete files that actually exist as paths.
+            foreach (array_filter([$image['image_path'], $image['cropped_path']]) as $file) {
+                $path = UPLOAD_DIR . $file;
+                // @ suppresses a warning if the file was already missing
+                // (e.g. manually removed) - deletion should still proceed
+                // either way.
+                if (is_file($path)) {
+                    @unlink($path);
+                }
+            }
+        }
+
+        $this->pdo->prepare('DELETE FROM products WHERE id = ?')->execute([$productId]);
         $this->flash('success', __('admin.products.flash_deleted'));
         return $this->redirect('/admin/products');
     }

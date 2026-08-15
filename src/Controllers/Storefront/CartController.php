@@ -204,19 +204,15 @@ final class CartController extends Controller
     {
         $quantities = $request->post('quantity', []);
         $limitedNames = [];
+        // Cart::getItems() re-hydrates the whole cart from the DB on every
+        // call (see Models\Cart's docblock) - called once here, up front,
+        // rather than once per posted line below, so a cart with N lines
+        // costs one rehydration instead of N.
+        $productIdsByKey = array_column($this->cart->getItems()['items'], 'product_id', 'key');
         foreach ((array)$quantities as $key => $qty) {
             $qty = (int)$qty;
             if ($qty > 0 && $this->cart->has($key)) {
-                // Need the line's product_id to re-check max_order_quantity -
-                // Models\Cart doesn't expose raw lines, so read it back via
-                // getItems()' already-hydrated product_id for this key.
-                $productId = null;
-                foreach ($this->cart->getItems()['items'] as $item) {
-                    if ($item['key'] === $key) {
-                        $productId = $item['product_id'];
-                        break;
-                    }
-                }
+                $productId = $productIdsByKey[$key] ?? null;
                 if ($productId !== null) {
                     $stmt = $this->pdo->prepare('SELECT name, max_order_quantity FROM products WHERE id = ?');
                     $stmt->execute([$productId]);

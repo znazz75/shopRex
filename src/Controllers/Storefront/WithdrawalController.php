@@ -113,17 +113,32 @@ final class WithdrawalController extends Controller
         $customer = CustomerAuth::current();
         $withdrawal = WithdrawalRequest::createFor($order, $customer, $reason, $validIds, $this->pdo, $this->settings);
 
-        $lang = I18n::current();
-        $received = Mailer::render('withdrawal_request_received', $lang, [
-            'customer_name' => e($customer['first_name'] ?? ''), 'order_number' => e($order->orderNumber),
-        ]);
-        Mailer::send($customer['email'] ?? $order->customerEmail, $received['subject'], $received['html'], 'withdrawal_request_received', $order->id);
+        // From here on, the withdrawal request itself already exists and
+        // is the part that actually matters - the two notification emails
+        // are best-effort. Both do their own DB writes (template lookup +
+        // email_log insert) against a PDO connection configured to throw
+        // on any SQL error (config/database.php), so wrapping this in one
+        // try/catch means a failed query here can't turn into an uncaught
+        // 500 that leaves the customer with no confirmation their request
+        // was actually received, or tempts them into resubmitting -
+        // WithdrawalRequest::findByOrder() above already blocks a genuine
+        // second submission, so a resubmit after a scary error page would
+        // just fail anyway, with no way to tell the request in fact went through.
+        try {
+            $lang = I18n::current();
+            $received = Mailer::render('withdrawal_request_received', $lang, [
+                'customer_name' => e($customer['first_name'] ?? ''), 'order_number' => e($order->orderNumber),
+            ]);
+            Mailer::send($customer['email'] ?? $order->customerEmail, $received['subject'], $received['html'], 'withdrawal_request_received', $order->id);
 
-        $shopEmail = $this->settings->get('shop_email', ADMIN_EMAIL);
-        $notifyShop = Mailer::render('withdrawal_request_notify_shop', $lang, [
-            'order_number' => e($order->orderNumber), 'reason' => e($reason ?: '(none given)'),
-        ]);
-        Mailer::send((string)$shopEmail, $notifyShop['subject'], $notifyShop['html'], 'withdrawal_request_notify_shop', $order->id);
+            $shopEmail = $this->settings->get('shop_email', ADMIN_EMAIL);
+            $notifyShop = Mailer::render('withdrawal_request_notify_shop', $lang, [
+                'order_number' => e($order->orderNumber), 'reason' => e($reason ?: '(none given)'),
+            ]);
+            Mailer::send((string)$shopEmail, $notifyShop['subject'], $notifyShop['html'], 'withdrawal_request_notify_shop', $order->id);
+        } catch (\Throwable $e) {
+            error_log('Withdrawal request #' . $withdrawal->id . ' created, but notification step failed: ' . $e->getMessage());
+        }
 
         $this->flash('success', __('withdrawal.submitted'));
         return $this->redirect('/account/orders/' . urlencode($order->orderNumber) . '/withdrawal');

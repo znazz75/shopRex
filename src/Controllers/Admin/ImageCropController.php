@@ -89,8 +89,15 @@ final class ImageCropController extends AdminCrudController
                         @unlink(UPLOAD_DIR . $image['cropped_path']);
                     }
 
-                    $this->pdo->prepare('UPDATE product_images SET cropped_path=?, crop_x=?, crop_y=?, crop_width=?, crop_height=? WHERE id=?')
-                        ->execute([$newFile, $x, $y, $w, $h, $imageId]);
+                    // crop_width/crop_height stay the SELECTION rectangle's
+                    // own size; crop_target_width/height separately record
+                    // what that selection was actually resized to, so
+                    // reopening this tool later can pre-fill the "Output
+                    // Width/Height" fields with the real previous output
+                    // size instead of the selection size (see the view's
+                    // docblock for why those aren't the same thing).
+                    $this->pdo->prepare('UPDATE product_images SET cropped_path=?, crop_x=?, crop_y=?, crop_width=?, crop_height=?, crop_target_width=?, crop_target_height=? WHERE id=?')
+                        ->execute([$newFile, $x, $y, $w, $h, $targetW, $targetH, $imageId]);
 
                     $this->flash('success', __('admin.image_crop.flash_cropped'));
                     return $this->redirect('/admin/products/' . $image['product_id'] . '/images');
