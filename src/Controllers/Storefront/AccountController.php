@@ -38,18 +38,13 @@ final class AccountController extends Controller
         $stmt->execute([$customer['id']]);
         $orders = $stmt->fetchAll();
 
-        $invoicesByOrder = [];
-        try {
-            // array_flip + array_column turns the list of order_id rows
-            // into a fast "is this order_id a key in the array?" lookup
-            // set, so the view can check isset($invoicesByOrder[$id])
-            // instead of scanning a list per order.
-            $invStmt = $this->pdo->prepare('SELECT order_id FROM invoices WHERE order_id IN (SELECT id FROM orders WHERE customer_id = ?)');
-            $invStmt->execute([$customer['id']]);
-            $invoicesByOrder = array_flip(array_column($invStmt->fetchAll(), 'order_id'));
-        } catch (\Throwable $e) {
-            // invoices table not present yet - just hide the download links.
-        }
+        // array_flip + array_column turns the list of order_id rows into a
+        // fast "is this order_id a key in the array?" lookup set, so the
+        // view can check isset($invoicesByOrder[$id]) instead of scanning
+        // a list per order.
+        $invStmt = $this->pdo->prepare('SELECT order_id FROM invoices WHERE order_id IN (SELECT id FROM orders WHERE customer_id = ?)');
+        $invStmt->execute([$customer['id']]);
+        $invoicesByOrder = array_flip(array_column($invStmt->fetchAll(), 'order_id'));
 
         $pageTitle = __('account.title');
         return $this->render('account/index', compact('customer', 'orders', 'invoicesByOrder', 'pageTitle'));

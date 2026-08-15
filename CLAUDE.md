@@ -139,8 +139,8 @@ directly from a view.
 
 **Legacy classes kept as-is** (`includes/Cart.php`, `Mailer.php`,
 `InvoiceGenerator.php`, `SimplePdf.php`, `ImageProcessor.php`,
-`GdprTools.php`, `GdprCleanup.php`, `PaymentGateway.php` — loaded via
-`require_once` in `src/container.php`, see that file's docblock): these
+`GdprTools.php`, `GdprCleanup.php` — loaded via `require_once` in
+`src/container.php`, see that file's docblock): these
 were already proper, single-purpose classes before the rewrite (not the
 procedural page-level functions the rewrite targeted), so converting them
 to the `ShopRex\` namespace is deferred polish, not a correctness gap.

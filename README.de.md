@@ -345,8 +345,7 @@ Verschachtelungstiefe ist unbegrenzt, genau wie bei Kategorien.
 sieht ein dauerhaftes **TEST-MODUS**-Banner, und jede Bestellung, die
 dabei aufgegeben wird:
 
-- nutzt das `TestGateway` aus
-  [includes/PaymentGateway.php](includes/PaymentGateway.php), das **keinen
+- nutzt `Payment\TestGateway`, das **keinen
   Netzwerkaufruf zu PayPal/Stripe/irgendwohin** macht und die Bestellung
   sofort als bezahlt markiert (simuliert) - unabhängig davon, welche
   Zahlungsart an der Kasse gewählt wurde, bewegt sich nie echtes Geld;
@@ -434,8 +433,10 @@ Standard für neue Produkte markiert.
 
 ## Zahlungen
 
-Die Anbindungspunkte der Zahlungsanbieter liegen in
-[includes/PaymentGateway.php](includes/PaymentGateway.php):
+Die Anbindungspunkte der Zahlungsanbieter liegen in `src/Payment/`
+(`PayPalGateway.php`/`CreditCardGateway.php`/`BankTransferGateway.php`/
+`InvoiceGateway.php`/`TestGateway.php`, hinter dem gemeinsamen
+`PaymentGateway`-Interface):
 
 - **PayPal** — echte Orders-v2-REST-Aufrufe (standardmäßig Sandbox).
   `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`/`PAYPAL_MODE` entweder unter
@@ -457,7 +458,7 @@ Die Anbindungspunkte der Zahlungsanbieter liegen in
 
 Vor dem Livegang: PayPal-Webhook-/Stripe-Webhook-Verarbeitung für
 asynchrone Bestätigung ergänzen (der aktuelle Ablauf verlässt sich auf die
-Browser-Weiterleitung zurück zu `checkout_process.php`, was für ein
+Browser-Weiterleitung zurück zu `/checkout/capture`, was für ein
 einfaches Framework ausreicht, aber nicht wasserdicht gegen abgebrochene
 Weiterleitungen ist).
 
@@ -494,8 +495,8 @@ muss, was tatsächlich angepasst wurde.
 
 Eine PDF-Rechnung wird an der Kasse erzeugt
 (`InvoiceGenerator::generateForOrder()`, aufgerufen aus
-`checkout_process.php` direkt nach dem Anlegen der Bestellung), in der
-Sprache der Bestellung, und:
+`Services\CheckoutService::placeOrder()` direkt nach dem Anlegen der
+Bestellung), in der Sprache der Bestellung, und:
 
 - wird **per E-Mail** als Anhang an die Bestellbestätigung angehängt (eine
   von Hand gebaute `multipart/mixed`-MIME-Nachricht in

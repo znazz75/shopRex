@@ -5,7 +5,6 @@ namespace ShopRex\Controllers\Admin;
 use ShopRex\Core\Container;
 use ShopRex\Core\Request;
 use ShopRex\Core\Response;
-use ShopRex\Services\TaxCalculator;
 
 /**
  * Direct port of admin/tax_rates.php. Manages the tax rates (e.g. "Standard
@@ -19,14 +18,11 @@ use ShopRex\Services\TaxCalculator;
 final class TaxRateAdminController extends AdminCrudController
 {
     private readonly \PDO $pdo;
-    /** Injected but only used indirectly here - TaxCalculator instances aren't called directly in this controller's own methods; see whether it's actually needed if extending this class (kept for parity with how this page was ported). */
-    private readonly TaxCalculator $tax;
 
     public function __construct(Request $request, Container $container)
     {
         parent::__construct($request, $container);
         $this->pdo = $container->make(\PDO::class);
-        $this->tax = $container->make(TaxCalculator::class);
     }
 
     /** GET /admin/tax-rates - lists every tax rate (with how many products use each) and, if ?edit=id is set, loads that rate into the edit form. */

@@ -271,16 +271,16 @@ class Mailer
         // confirmation from going out at all.
         $invoicePath = null;
         $invoiceName = null;
-        try {
-            $stmt = db()->prepare('SELECT * FROM invoices WHERE order_id = ? LIMIT 1');
-            $stmt->execute([$order['id']]);
-            $invoice = $stmt->fetch();
-            if ($invoice && is_file($invoice['pdf_path'])) {
-                $invoicePath = $invoice['pdf_path'];
-                $invoiceName = $invoice['invoice_number'] . '.pdf';
-            }
-        } catch (Throwable $e) {
-            // invoices table/file not available - send without an attachment.
+        $stmt = db()->prepare('SELECT * FROM invoices WHERE order_id = ? LIMIT 1');
+        $stmt->execute([$order['id']]);
+        $invoice = $stmt->fetch();
+        // No matching row (e.g. InvoiceGenerator failed earlier and was
+        // already error_log()'d by CheckoutService) or the file's gone
+        // missing from disk - either way, a missing invoice shouldn't
+        // block the order confirmation itself from going out.
+        if ($invoice && is_file($invoice['pdf_path'])) {
+            $invoicePath = $invoice['pdf_path'];
+            $invoiceName = $invoice['invoice_number'] . '.pdf';
         }
 
         return self::send($order['customer_email'], $rendered['subject'], $rendered['html'], 'order_confirmation', (int)$order['id'], $invoicePath, $invoiceName);

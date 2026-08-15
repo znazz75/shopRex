@@ -10,9 +10,9 @@
  *     depends on, exists at all), and
  *   - the handful of legacy classes src/container.php still loads as-is
  *     (includes/Cart.php, Mailer.php, InvoiceGenerator.php, SimplePdf.php,
- *     ImageProcessor.php, GdprTools.php, GdprCleanup.php,
- *     PaymentGateway.php - see that file's docblock for why those specific
- *     classes weren't ported).
+ *     ImageProcessor.php, GdprTools.php, GdprCleanup.php - see CLAUDE.md's
+ *     "Legacy classes kept as-is" section for why those specific classes
+ *     weren't ported).
  * Nothing here is called from src/ itself - src/view-helpers.php's shims
  * delegate to the new classes, not to this file.
  */
@@ -116,11 +116,9 @@ function requireCsrf(): void
 
 // ---------------------------------------------------------------
 // Settings (key/value store, cached per request) - still the read path
-// for every kept legacy class (Mailer/InvoiceGenerator/PaymentGateway/
-// Cart all call this directly - though see includes/PaymentGateway.php's
-// own top-of-file note: that particular file appears to be dead code,
-// no longer required anywhere); Services\SettingsRepository is the src/
-// equivalent everything else uses.
+// for every kept legacy class (Mailer/InvoiceGenerator/Cart all call this
+// directly); Services\SettingsRepository is the src/ equivalent everything
+// else uses.
 // ---------------------------------------------------------------
 
 /**

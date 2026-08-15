@@ -313,8 +313,7 @@ you choose) that creates a customer account with `is_test_account = 1`.
 Whoever logs into the storefront with that account sees a persistent
 **TEST MODE** banner, and every order they place while logged in:
 
-- uses `includes/PaymentGateway.php`'s
-  `TestGateway`, which makes **no network call to PayPal/Stripe/anywhere**
+- uses `Payment\TestGateway`, which makes **no network call to PayPal/Stripe/anywhere**
   and immediately marks the order paid (simulated) - no real money ever moves,
   regardless of which payment method they pick at checkout;
 - is still recorded in `inventory_log` (so the trial run is visible and
@@ -387,7 +386,7 @@ fieldsets) can independently have:
 
 ## Payments
 
-Gateway integration points live in `includes/PaymentGateway.php`:
+Gateway integration points live in `src/Payment/` (`PayPalGateway.php`/`CreditCardGateway.php`/`BankTransferGateway.php`/`InvoiceGateway.php`/`TestGateway.php`, behind the shared `PaymentGateway` interface):
 
 - **PayPal** — real Orders v2 REST calls (sandbox by default). Configure
   `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`/`PAYPAL_MODE` either in
@@ -407,7 +406,7 @@ Gateway integration points live in `includes/PaymentGateway.php`:
 
 Before going live: add PayPal webhook / Stripe webhook handling for
 asynchronous confirmation (the current flow relies on the browser redirect
-back to `checkout_process.php`, which is enough for a basic framework but
+back to `/checkout/capture`, which is enough for a basic framework but
 not bulletproof against abandoned redirects).
 
 ## Email templates
@@ -441,8 +440,8 @@ you've customized.
 ## Invoices
 
 A PDF invoice is generated at checkout (`InvoiceGenerator::generateForOrder()`,
-called from `checkout_process.php` right after the order is created) in the
-order's language, and:
+called from `Services\CheckoutService::placeOrder()` right after the order
+is created) in the order's language, and:
 
 - **emailed** as an attachment on the order confirmation email (a
   hand-built `multipart/mixed` MIME message in `Mailer::deliver()` - no

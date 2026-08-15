@@ -8,6 +8,28 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [2.09] - 2026-08-15
+
+### Removed
+- `includes/PaymentGateway.php` - confirmed dead code, superseded by
+  `src/Payment/*` since the v2.00 rewrite and referenced nowhere else
+  (`src/container.php` never loaded it). Updated the remaining stale
+  references to it in `CLAUDE.md`, `includes/functions.php`,
+  `README.md`, and `README.de.md` to point at `src/Payment/` instead
+  (that "Payments"/"Test users" README section had been stale since the
+  v2.00 cutover, still describing the pre-rewrite gateway file and the
+  removed `checkout_process.php` route).
+- Three `try { ... } catch (\Throwable $e) { /* invoices table not
+  present yet */ }` blocks (`AccountController::index()`,
+  `OrderController::confirmation()`, `Mailer::sendOrderConfirmation()`) -
+  defensive tolerance for running the app against a database that
+  predates the `invoices` table, which has no other support anywhere in
+  the app (no migrations system, no version-upgrade wizard - `sql/schema.sql`
+  is the only schema source and always includes it). All three are now
+  plain, unconditional queries.
+- `TaxRateAdminController`'s injected `TaxCalculator` dependency, which
+  was never actually used anywhere in the class.
+
 ## [2.08] - 2026-08-15
 
 ### Fixed

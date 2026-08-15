@@ -59,13 +59,8 @@ final class OrderController extends Controller
         $items = $order->items();
 
         $invoiceStmt = $this->pdo->prepare('SELECT * FROM invoices WHERE order_id = ? LIMIT 1');
-        $invoiceExists = false;
-        try {
-            $invoiceStmt->execute([$order->id]);
-            $invoiceExists = (bool)$invoiceStmt->fetch();
-        } catch (\Throwable $e) {
-            // invoices table not present yet (e.g. pre-migration DB) - just hide the link.
-        }
+        $invoiceStmt->execute([$order->id]);
+        $invoiceExists = (bool)$invoiceStmt->fetch();
 
         $pageTitle = __('order.confirmation_title');
 
