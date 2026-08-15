@@ -8,6 +8,23 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [2.08] - 2026-08-15
+
+### Fixed
+- `includes/InvoiceGenerator.php` only had `en`/`de` invoice label sets -
+  a French order's generated PDF invoice was entirely in English. Added
+  a full `fr` label set.
+- `includes/Mailer.php`'s order-confirmation email had several hardcoded
+  English strings that never went through `__()`: the order-items table's
+  column headers ("Item"/"Qty"/"Price") and totals rows ("Subtotal"/
+  "Shipping"/"Tax"/"Total"), plus the bank-transfer and pay-by-invoice
+  payment instructions block. Both now reuse the exact same translation
+  keys as the storefront order confirmation page, so the on-screen page
+  and the emailed confirmation say the same thing in the same language.
+  Verified via a standalone script that calls both functions directly
+  with a French order and checks every label made it into the generated
+  PDF/HTML - German re-checked too, to confirm it was unaffected.
+
 ## [2.07] - 2026-08-15
 
 ### Added

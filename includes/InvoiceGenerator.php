@@ -13,10 +13,10 @@
  * around this exact method - callers in the new src/ code go through that
  * wrapper rather than calling InvoiceGenerator directly.
  *
- * Note: only 'en' and 'de' invoice label translations are defined below
- * (see LABELS) even though the shop is otherwise trilingual (EN/DE/FR) -
- * an order placed in French falls back to English invoice text via the
- * in_array() check in generateForOrder().
+ * Invoice label translations (see LABELS) cover all three of the shop's
+ * languages (EN/DE/FR); an order placed in some other/disabled language
+ * falls back to English invoice text via the in_array() check in
+ * generateForOrder().
  */
 class InvoiceGenerator
 {
@@ -42,6 +42,24 @@ class InvoiceGenerator
             'vat_on' => 'MwSt.', 'test_notice' => 'TESTBESTELLUNG - ES WURDE KEINE ECHTE ZAHLUNG VERARBEITET',
             'thank_you' => 'Vielen Dank für Ihre Bestellung!',
         ],
+        // Accented characters here (é, è, à, ç, ...) are all within
+        // WinAnsiEncoding/Latin-1, same as German's umlauts - SimplePdf
+        // renders them natively, no transliteration needed (see
+        // SimplePdf's own docblock for the encoding this class relies on).
+        'fr' => [
+            'invoice' => 'Facture', 'date' => 'Date', 'order_number' => 'Numéro de commande',
+            'billing_address' => 'Adresse de facturation', 'item' => 'Article', 'qty' => 'Qté',
+            'net_price' => 'Prix net', 'vat' => 'TVA', 'total' => 'Total',
+            'subtotal' => 'Sous-total', 'shipping' => 'Livraison', 'grand_total' => 'Total général',
+            'vat_on' => 'TVA', 'test_notice' => "COMMANDE DE TEST - AUCUN PAIEMENT REEL N'A ETE TRAITE",
+            // ^ accent-free by choice: this line is the one drawn as a
+            // bold, enlarged all-caps warning banner, and dropping accents
+            // on capitals in all-caps French text is a long-standing,
+            // still-common typographic convention (unlike every other
+            // label here, which is normal mixed-case text and keeps its
+            // accents, e.g. 'Numéro de commande' below).
+            'thank_you' => 'Merci pour votre commande !',
+        ],
     ];
 
     /**
@@ -52,8 +70,9 @@ class InvoiceGenerator
     public static function generateForOrder(array $order, array $items): array
     {
         // Fall back to English whenever the order's saved language isn't
-        // one of the languages LABELS has translations for (see the class
-        // docblock's note on 'fr' not being covered here).
+        // one of the languages LABELS has translations for (covers en/de/fr
+        // today - only reachable if a language gets disabled/removed after
+        // the order was placed, or the language column is somehow blank).
         $language = in_array($order['language'] ?? 'en', array_keys(self::LABELS), true) ? $order['language'] : 'en';
         $t = self::LABELS[$language];
 

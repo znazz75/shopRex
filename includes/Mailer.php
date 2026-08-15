@@ -187,11 +187,16 @@ class Mailer
     /**
      * Builds the HTML order-items table + totals summary that fills the
      * {{order_items_table}} token in the order_confirmation template.
-     * NOTE: the column headers/labels here ("Item"/"Qty"/"Price"/
-     * "Subtotal"/"Shipping"/"Tax"/"Total") are hardcoded English strings,
-     * not run through __()/the per-language template system - so even a
-     * German or French order confirmation email currently embeds this
-     * table with English labels.
+     * Column headers/labels reuse the exact same translation keys as the
+     * storefront order confirmation page (src/Views/storefront/order/
+     * confirmation.php), via the global __() helper, so the wording a
+     * customer sees on-screen right after checkout matches what lands in
+     * their inbox a moment later. __() renders in Services\I18n::current()'s
+     * language rather than $order['language'] explicitly - safe here only
+     * because sendOrderConfirmation() is exclusively called synchronously
+     * from CheckoutService, mid-checkout-request, when the two are always
+     * the same value; a future "resend this email" admin action would need
+     * to switch the active language first rather than assuming that.
      */
     private static function renderOrderItemsTable(array $order, array $items): string
     {
@@ -207,14 +212,18 @@ class Mailer
                 . '</tr>';
         }
 
+        // Same "Shipping (Method Name)" pattern as the storefront cart/
+        // checkout pages - only appends the method name when one's known.
+        $shippingLabel = e(__('common.shipping')) . (!empty($order['shipping_method_name']) ? ' (' . e($order['shipping_method_name']) . ')' : '');
+
         return '<table style="width:100%;border-collapse:collapse;margin-top:16px;">'
-            . '<thead><tr style="text-align:left;border-bottom:2px solid #e5e7eb;"><th style="padding:8px 4px;">Item</th><th style="padding:8px 4px;">Qty</th><th style="padding:8px 4px;text-align:right;">Price</th></tr></thead>'
+            . '<thead><tr style="text-align:left;border-bottom:2px solid #e5e7eb;"><th style="padding:8px 4px;">' . e(__('order.item')) . '</th><th style="padding:8px 4px;">' . e(__('common.quantity')) . '</th><th style="padding:8px 4px;text-align:right;">' . e(__('common.price')) . '</th></tr></thead>'
             . '<tbody>' . $rows . '</tbody></table>'
             . '<table style="width:100%;margin-top:12px;">'
-            . '<tr><td>Subtotal</td><td style="text-align:right;">' . formatPrice((float)$order['subtotal']) . '</td></tr>'
-            . '<tr><td>Shipping' . (!empty($order['shipping_method_name']) ? ' (' . e($order['shipping_method_name']) . ')' : '') . '</td><td style="text-align:right;">' . formatPrice((float)$order['shipping_cost']) . '</td></tr>'
-            . '<tr><td>Tax</td><td style="text-align:right;">' . formatPrice((float)$order['tax_total']) . '</td></tr>'
-            . '<tr style="font-weight:bold;font-size:16px;"><td style="padding-top:8px;">Total</td><td style="text-align:right;padding-top:8px;">' . formatPrice((float)$order['total']) . '</td></tr>'
+            . '<tr><td>' . e(__('common.subtotal')) . '</td><td style="text-align:right;">' . formatPrice((float)$order['subtotal']) . '</td></tr>'
+            . '<tr><td>' . $shippingLabel . '</td><td style="text-align:right;">' . formatPrice((float)$order['shipping_cost']) . '</td></tr>'
+            . '<tr><td>' . e(__('common.tax')) . '</td><td style="text-align:right;">' . formatPrice((float)$order['tax_total']) . '</td></tr>'
+            . '<tr style="font-weight:bold;font-size:16px;"><td style="padding-top:8px;">' . e(__('common.total')) . '</td><td style="text-align:right;padding-top:8px;">' . formatPrice((float)$order['total']) . '</td></tr>'
             . '</table>';
     }
 
@@ -232,15 +241,20 @@ class Mailer
         // both payment methods that get no gateway redirect (bank transfer
         // and invoice) - avoids needing a second token in every language's
         // order_confirmation template row (see sql/schema.sql email_templates seed).
+        // Same translation keys (and the same {amount}-token phrasing) as
+        // the equivalent block on the storefront order confirmation page
+        // (src/Views/storefront/order/confirmation.php) - see
+        // renderOrderItemsTable()'s docblock for why __() is safe to use
+        // here despite not being passed $order['language'] explicitly.
         $bankDetails = '';
         if ($order['payment_method'] === 'bank_transfer') {
             $bankDetails = '<div style="background:#f3f4f6;border-radius:6px;padding:16px;margin-top:12px;">'
-                . '<p style="margin:0 0 8px;font-weight:bold;">Please transfer the total amount to:</p>'
-                . '<p style="margin:0;">Account holder: ' . e(getSetting('bank_account_holder', BANK_ACCOUNT_HOLDER)) . '<br>IBAN: ' . e(getSetting('bank_iban', BANK_IBAN))
-                . '<br>BIC: ' . e(getSetting('bank_bic', BANK_BIC)) . '<br>Bank: ' . e(getSetting('bank_name', BANK_NAME)) . '<br>Reference: ' . e($order['order_number']) . '</p></div>';
+                . '<p style="margin:0 0 8px;font-weight:bold;">' . e(__('order.bank_transfer_instructions', ['amount' => formatPrice((float)$order['total'])])) . '</p>'
+                . '<p style="margin:0;">' . e(__('order.bank_account_holder')) . ': ' . e(getSetting('bank_account_holder', BANK_ACCOUNT_HOLDER)) . '<br>' . e(__('order.bank_iban')) . ': ' . e(getSetting('bank_iban', BANK_IBAN))
+                . '<br>' . e(__('order.bank_bic')) . ': ' . e(getSetting('bank_bic', BANK_BIC)) . '<br>' . e(__('order.bank_name')) . ': ' . e(getSetting('bank_name', BANK_NAME)) . '<br>' . e(__('order.bank_reference')) . ': ' . e($order['order_number']) . '<br><br>' . e(__('order.will_ship_on_payment')) . '</p></div>';
         } elseif ($order['payment_method'] === 'invoice') {
             $bankDetails = '<div style="background:#f3f4f6;border-radius:6px;padding:16px;margin-top:12px;">'
-                . '<p style="margin:0;">You will receive an invoice with your shipment - please pay within the stated term.</p></div>';
+                . '<p style="margin:0;">' . e(__('order.invoice_instructions')) . '</p></div>';
         }
 
         $rendered = self::render('order_confirmation', $lang, [
