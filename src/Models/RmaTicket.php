@@ -2,6 +2,8 @@
 
 namespace ShopRex\Models;
 
+use ShopRex\Services\NumberSequenceService;
+
 /**
  * RMA / defect ticket - warranty-based, item-level (a defect claim is
  * always about one specific product), distinct from the no-reason-needed,
@@ -14,6 +16,9 @@ class RmaTicket extends CustomerRequest
 {
     protected static string $table = 'rma_tickets';
 
+    // Admin-configurable via Admin -> Numbering (see Services\NumberSequenceService);
+    // null for any ticket submitted before that feature existed.
+    public ?string $rmaNumber = null;
     // Which specific line item within the order this defect claim is
     // about - unlike WithdrawalRequest, an RMA is always tied to one item,
     // never the whole order.
@@ -62,13 +67,18 @@ class RmaTicket extends CustomerRequest
     }
 
     /** Opens a new RMA/defect ticket for one order item - the storefront controller is expected to have already checked isEligible() before calling this; this method itself doesn't re-verify warranty eligibility. */
-    public static function createFor(int $orderId, int $orderItemId, ?array $customer, string $claimType, string $description, \PDO $pdo): self
+    public static function createFor(int $orderId, int $orderItemId, ?array $customer, string $claimType, string $description, \PDO $pdo, NumberSequenceService $sequences): self
     {
+        // Admin -> Numbering (see Services\NumberSequenceService) - allocated
+        // right before the insert, not earlier, to minimize (though not
+        // fully eliminate) leaving a gap in the sequence if this insert
+        // somehow fails.
+        $rmaNumber = $sequences->next('rma_ticket');
         $stmt = $pdo->prepare(
-            'INSERT INTO rma_tickets (order_id, order_item_id, customer_id, defect_description, warranty_claim_type, status)
-             VALUES (?, ?, ?, ?, ?, "submitted")'
+            'INSERT INTO rma_tickets (rma_number, order_id, order_item_id, customer_id, defect_description, warranty_claim_type, status)
+             VALUES (?, ?, ?, ?, ?, ?, "submitted")'
         );
-        $stmt->execute([$orderId, $orderItemId, $customer['id'] ?? null, $description, $claimType]);
+        $stmt->execute([$rmaNumber, $orderId, $orderItemId, $customer['id'] ?? null, $description, $claimType]);
         return self::find((int)$pdo->lastInsertId());
     }
 

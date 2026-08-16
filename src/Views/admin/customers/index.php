@@ -38,10 +38,12 @@
 </form>
 
 <table class="data-table">
-  <thead><tr><th><?= e(__('admin.products.name')) ?></th><th><?= e(__('common.email')) ?></th><th><?= e(__('admin.customers.phone')) ?></th><th><?= e(__('admin.orders')) ?></th><th><?= e(__('admin.customers.lifetime_value')) ?></th><th><?= e(__('common.status')) ?></th><th><?= e(__('admin.customers.joined')) ?></th><th></th></tr></thead>
+  <thead><tr><th><?= e(__('admin.numbering.type_customer')) ?></th><th><?= e(__('admin.products.name')) ?></th><th><?= e(__('common.email')) ?></th><th><?= e(__('admin.customers.phone')) ?></th><th><?= e(__('admin.orders')) ?></th><th><?= e(__('admin.customers.lifetime_value')) ?></th><th><?= e(__('common.status')) ?></th><th><?= e(__('admin.customers.joined')) ?></th><th></th></tr></thead>
   <tbody>
   <?php foreach ($customers as $c): ?>
     <tr>
+      <?php /* customer_number is NULL for any customer created before Admin -> Numbering existed - shown as a dash rather than blank so the column doesn't look broken. */ ?>
+      <td><?= e($c['customer_number'] ?? '-') ?></td>
       <td>
         <?= e($c['first_name'] . ' ' . $c['last_name']) ?>
         <?php /* Flags accounts created via the "create test user" form above, so they're not mistaken for real customers in this list. */ ?>
@@ -60,6 +62,6 @@
       <td><a class="btn btn-sm btn-secondary" href="<?= rtrim(SITE_URL, '/') ?>/admin/customers/<?= (int)$c['id'] ?>"><?= e(__('admin.customers.view')) ?></a></td>
     </tr>
   <?php endforeach; ?>
-  <?php if (empty($customers)): ?><tr><td colspan="8"><?= e(__('admin.customers.none_found')) ?></td></tr><?php endif; ?>
+  <?php if (empty($customers)): ?><tr><td colspan="9"><?= e(__('admin.customers.none_found')) ?></td></tr><?php endif; ?>
   </tbody>
 </table>

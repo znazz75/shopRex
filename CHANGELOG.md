@@ -8,6 +8,38 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [3.05] - 2026-08-16
+
+New feature: admin-configurable sequential numbering.
+
+### Added
+- **Admin → Numbering**: lets an admin configure the format of the
+  sequential numbers issued for customer accounts, invoices, RMA tickets,
+  and withdrawal requests - starting value, increment, optional
+  prefix/suffix, and an optional date component (raw PHP `date()` tokens,
+  e.g. "Y" or "Ym") with an optional "reset the counter when the date
+  component changes" toggle. Backed by a new `number_sequences` table and
+  `Services\NumberSequenceService`, which allocates numbers atomically
+  (`SELECT ... FOR UPDATE`) so concurrent registrations/orders/tickets can
+  never collide - proven directly against MySQL with genuinely concurrent
+  statements during verification, same methodology as the 3.02/3.03 race
+  fixes.
+- New `customers.customer_number`, `rma_tickets.rma_number`, and
+  `withdrawal_requests.withdrawal_number` columns (nullable - existing
+  rows are never backfilled, only new records get a number going forward).
+  Shown in the relevant admin list/detail pages and the storefront RMA/
+  withdrawal status pages.
+- `Services\InvoiceGenerator::generateForOrder()`'s invoice numbers are
+  now issued from this same mechanism instead of the old fixed
+  `INV-{year}-{order id}` format, while preserving its existing
+  "safe to call twice for the same order" guarantee (it now looks up an
+  already-issued number for that order first, and only allocates a new
+  one if none exists yet).
+- **Order numbers are intentionally NOT included** - they keep their
+  existing date+random scheme. A sequential/guessable order number would
+  reintroduce the brute-forceable guest-order-lookup issue
+  `docs/SECURITY_AUDIT.md` finding #4 already fixed.
+
 ## [3.04] - 2026-08-16
 
 Manual verification pass for the 3.02/3.03 audit fixes on a local XAMPP

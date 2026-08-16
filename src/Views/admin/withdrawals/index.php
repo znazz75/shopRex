@@ -34,11 +34,13 @@ $badgeClass = static fn (string $status): string => match ($status) {
 </form>
 
 <table class="data-table">
-  <thead><tr><th><?= e(__('admin.dashboard.order_number')) ?></th><th><?= e(__('common.email')) ?></th><th><?= e(__('common.status')) ?></th><th><?= e(__('admin.withdrawals.deadline')) ?></th><th><?= e(__('common.date')) ?></th><th></th></tr></thead>
+  <thead><tr><th><?= e(__('admin.numbering.type_withdrawal_request')) ?></th><th><?= e(__('admin.dashboard.order_number')) ?></th><th><?= e(__('common.email')) ?></th><th><?= e(__('common.status')) ?></th><th><?= e(__('admin.withdrawals.deadline')) ?></th><th><?= e(__('common.date')) ?></th><th></th></tr></thead>
   <tbody>
     <?php /* Raw status codes use underscores (e.g. "in_review") - ucwords(str_replace(...)) turns that into a readable "In Review" for display, same formatting trick used for payment-method names elsewhere in the admin. */ ?>
     <?php foreach ($requests as $r): ?>
       <tr>
+        <?php /* withdrawal_number is NULL for any request submitted before Admin -> Numbering existed. */ ?>
+        <td><?= e($r['withdrawal_number'] ?? '-') ?></td>
         <td><?= e($r['order_number']) ?></td>
         <td><?= e($r['customer_email'] ?? '') ?></td>
         <td><span class="badge badge-<?= $badgeClass($r['status']) ?>"><?= e(ucwords(str_replace('_', ' ', $r['status']))) ?></span></td>
@@ -47,6 +49,6 @@ $badgeClass = static fn (string $status): string => match ($status) {
         <td><a class="btn btn-sm btn-secondary" href="<?= e($base) ?>/<?= (int)$r['id'] ?>"><?= e(__('admin.customers.view')) ?></a></td>
       </tr>
     <?php endforeach; ?>
-    <?php if (empty($requests)): ?><tr><td colspan="6"><?= e(__('admin.withdrawals.none_yet')) ?></td></tr><?php endif; ?>
+    <?php if (empty($requests)): ?><tr><td colspan="7"><?= e(__('admin.withdrawals.none_yet')) ?></td></tr><?php endif; ?>
   </tbody>
 </table>

@@ -257,6 +257,10 @@ CREATE TABLE product_variant_values (
 -- GDPR inactivity automation (see admin/cron/gdpr_cleanup.php).
 CREATE TABLE customers (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    -- Admin-configurable via Admin -> Numbering (Services\NumberSequenceService);
+    -- NULL for any customer created before that feature existed - only new
+    -- customers get one, existing rows are never backfilled.
+    customer_number VARCHAR(50) NULL UNIQUE,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(190) NOT NULL UNIQUE,
@@ -1012,6 +1016,9 @@ CREATE TABLE contact_message_attempts (
 -- ------------------------------------------------------------
 CREATE TABLE withdrawal_requests (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    -- Admin-configurable via Admin -> Numbering (Services\NumberSequenceService);
+    -- NULL for any request submitted before that feature existed.
+    withdrawal_number VARCHAR(50) NULL UNIQUE,
     order_id INT UNSIGNED NOT NULL,
     customer_id INT UNSIGNED NULL,
     reason TEXT NULL,
@@ -1053,6 +1060,9 @@ CREATE TABLE withdrawal_request_items (
 -- ------------------------------------------------------------
 CREATE TABLE rma_tickets (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    -- Admin-configurable via Admin -> Numbering (Services\NumberSequenceService);
+    -- NULL for any ticket submitted before that feature existed.
+    rma_number VARCHAR(50) NULL UNIQUE,
     order_id INT UNSIGNED NOT NULL,
     order_item_id INT UNSIGNED NOT NULL,
     customer_id INT UNSIGNED NULL,
@@ -1107,3 +1117,44 @@ CREATE TABLE legal_documents (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_legal_doc_type_lang (type, language)
 ) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Admin -> Numbering (Services\NumberSequenceService) - one row per
+-- document type, all four seeded below since `type` is a fixed,
+-- code-defined set (not admin-creatable) rather than an open list like
+-- legal_documents.type above. Deliberately does NOT include order numbers
+-- (orders.order_number) - those stay date+random on purpose, since a
+-- sequential/guessable order number would reintroduce the brute-forceable
+-- guest-order-lookup issue docs/SECURITY_AUDIT.md finding #4 fixed.
+-- ------------------------------------------------------------
+CREATE TABLE number_sequences (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    type VARCHAR(30) NOT NULL UNIQUE,
+    prefix VARCHAR(20) NOT NULL DEFAULT '',
+    suffix VARCHAR(20) NOT NULL DEFAULT '',
+    -- Raw PHP date() format tokens (e.g. "Y", "Ym"); '' means no date
+    -- component at all. Non-letter characters (e.g. "-") aren't reserved
+    -- date() tokens, so an admin can bake a literal separator straight
+    -- into this without any escaping - see Services\NumberSequenceService.
+    date_format VARCHAR(20) NOT NULL DEFAULT '',
+    padding TINYINT UNSIGNED NOT NULL DEFAULT 6,
+    start_value INT UNSIGNED NOT NULL DEFAULT 1,
+    increment INT UNSIGNED NOT NULL DEFAULT 1,
+    -- The live counter - the next number that will actually be issued.
+    -- Admin-editable (e.g. to skip ahead past legacy numbers), unlike
+    -- start_value which only matters again on the next reset.
+    next_value INT UNSIGNED NOT NULL DEFAULT 1,
+    -- Only meaningful when date_format isn't '' - see
+    -- Services\NumberSequenceService::next() for the reset logic.
+    reset_on_date_change TINYINT(1) NOT NULL DEFAULT 0,
+    -- The date_format output as of the last-issued number, used to detect
+    -- a period rollover (e.g. year change) worth resetting on.
+    current_period_key VARCHAR(20) NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+INSERT INTO number_sequences (type, prefix, suffix, date_format, padding, start_value, increment, next_value) VALUES
+    ('customer', 'C-', '', '', 6, 1, 1, 1),
+    ('invoice', 'INV-', '', 'Y', 6, 1, 1, 1),
+    ('rma_ticket', 'RMA-', '', '', 5, 1, 1, 1),
+    ('withdrawal_request', 'WD-', '', '', 5, 1, 1, 1);

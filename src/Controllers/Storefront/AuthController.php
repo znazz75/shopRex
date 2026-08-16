@@ -9,6 +9,7 @@ use ShopRex\Core\Request;
 use ShopRex\Core\Response;
 use ShopRex\Services\I18n;
 use ShopRex\Services\Mailer;
+use ShopRex\Services\NumberSequenceService;
 use ShopRex\Services\RateLimiter;
 
 /**
@@ -24,12 +25,14 @@ final class AuthController extends Controller
 {
     private readonly \PDO $pdo; // Raw DB handle for the hand-written customer lookup/update queries below.
     private readonly RateLimiter $rateLimiter; // Throttles login attempts and password-reset requests per email/IP to slow down brute-force guessing (docs/SECURITY_AUDIT.md finding #5).
+    private readonly NumberSequenceService $sequences; // Issues this new customer's customer_number (Admin -> Numbering) at registration.
 
     public function __construct(Request $request, Container $container)
     {
         parent::__construct($request, $container);
         $this->pdo = $container->make(\PDO::class);
         $this->rateLimiter = $container->make(RateLimiter::class);
+        $this->sequences = $container->make(NumberSequenceService::class);
     }
 
     /** Shows the login form - redirects away if the visitor is already signed in, since there's nothing to log in to. */
@@ -152,8 +155,9 @@ final class AuthController extends Controller
             // password_hash(...,PASSWORD_DEFAULT) is bcrypt (PHP's
             // currently-recommended default algorithm) - the plaintext
             // password itself is never stored.
-            $stmt = $this->pdo->prepare('INSERT INTO customers (first_name, last_name, email, password_hash, language) VALUES (?, ?, ?, ?, ?)');
-            $stmt->execute([$firstName, $lastName, $email, password_hash($password, PASSWORD_DEFAULT), I18n::current()]);
+            $customerNumber = $this->sequences->next('customer');
+            $stmt = $this->pdo->prepare('INSERT INTO customers (customer_number, first_name, last_name, email, password_hash, language) VALUES (?, ?, ?, ?, ?, ?)');
+            $stmt->execute([$customerNumber, $firstName, $lastName, $email, password_hash($password, PASSWORD_DEFAULT), I18n::current()]);
             $newCustomerId = (int)$this->pdo->lastInsertId();
             // Same session-fixation defenses as login() - a freshly
             // registered account is a fresh authentication event too.

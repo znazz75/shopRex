@@ -70,6 +70,9 @@ return function (bool $isAdmin = false): Container {
     $container->singleton(FlashBag::class, fn (Container $c) => new FlashBag($c->make(Session::class)));
 
     $container->singleton(SettingsRepository::class, fn (Container $c) => new SettingsRepository($c->make(\PDO::class)));
+    // Admin -> Numbering (customer/invoice/RMA-ticket/withdrawal-request
+    // sequential numbers) - see Services\NumberSequenceService's docblock.
+    $container->singleton(\ShopRex\Services\NumberSequenceService::class, fn (Container $c) => new \ShopRex\Services\NumberSequenceService($c->make(\PDO::class)));
 
     $container->singleton(CategoryTreeService::class, fn (Container $c) => new CategoryTreeService($c->make(\PDO::class), $c->make(SettingsRepository::class)));
     $container->singleton(MenuTreeService::class, fn (Container $c) => new MenuTreeService($c->make(\PDO::class), $c->make(CategoryTreeService::class)));
@@ -93,7 +96,8 @@ return function (bool $isAdmin = false): Container {
         $c->make(\PDO::class),
         $c->make(Cart::class),
         $c->make(PaymentGatewayFactory::class),
-        $c->make(SettingsRepository::class)
+        $c->make(SettingsRepository::class),
+        $c->make(\ShopRex\Services\NumberSequenceService::class)
     ));
 
     // Shared by login.php/register.php/forgot_password.php (this instance)

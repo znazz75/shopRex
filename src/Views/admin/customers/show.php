@@ -25,6 +25,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/customers/' . $id;
 <?php endif; ?>
 
 <div class="card">
+  <p><strong><?= e(__('admin.numbering.type_customer')) ?>:</strong> <?= e($customer['customer_number'] ?? '-') ?></p>
   <p><strong><?= e(__('common.email')) ?>:</strong> <?= e($customer['email']) ?></p>
   <p><strong><?= e(__('admin.customers.phone')) ?>:</strong> <?= e($customer['phone'] ?? '-') ?></p>
   <p><strong><?= e(__('admin.customers.joined')) ?>:</strong> <?= e(formatLocalDate($customer['created_at'])) ?></p>

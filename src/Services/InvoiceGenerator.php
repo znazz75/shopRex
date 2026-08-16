@@ -68,7 +68,7 @@ final class InvoiceGenerator
      * Safe to call more than once for the same order (e.g. a retry) -
      * replaces the previous file/row rather than accumulating duplicates.
      */
-    public static function generateForOrder(array $order, array $items): array
+    public static function generateForOrder(array $order, array $items, NumberSequenceService $sequences): array
     {
         // Fall back to English whenever the order's saved language isn't
         // one of the languages LABELS has translations for (covers en/de/fr
@@ -77,11 +77,20 @@ final class InvoiceGenerator
         $language = in_array($order['language'] ?? 'en', array_keys(self::LABELS), true) ? $order['language'] : 'en';
         $t = self::LABELS[$language];
 
-        // Deterministic invoice number derived purely from the order id -
-        // this is what lets generateForOrder() be called again safely for
-        // the same order (see docblock above): the number, and therefore
-        // the file path and the UNIQUE db row, always come out identical.
-        $invoiceNumber = sprintf('INV-%s-%06d', date('Y'), $order['id']);
+        // The invoice number is admin-configurable (Admin -> Numbering,
+        // Services\NumberSequenceService) rather than the old fixed
+        // 'INV-{year}-{order id}' format, but the "safe to call again for
+        // the same order" contract this docblock promises still has to
+        // hold: check for an already-issued number FIRST and reuse it if
+        // found, rather than allocating a fresh sequence number (and a
+        // fresh gap) on every retry - only a genuinely new order (no
+        // invoices row yet) consumes a new number.
+        $existingStmt = db()->prepare('SELECT invoice_number FROM invoices WHERE order_id = ?');
+        $existingStmt->execute([$order['id']]);
+        $invoiceNumber = $existingStmt->fetchColumn();
+        if ($invoiceNumber === false) {
+            $invoiceNumber = $sequences->next('invoice');
+        }
 
         // Build the PDF top-to-bottom by hand: $y tracks the current
         // vertical "cursor" position and is decremented after every line
@@ -247,10 +256,10 @@ final class InvoiceGenerator
         // (see SimplePdf::output()) and write them straight to disk.
         file_put_contents($filePath, $pdf->output());
 
-        // invoice_number is derived deterministically from the order id, so
-        // calling this twice for the same order (e.g. a retry) hits the
-        // UNIQUE constraint on invoice_number and cleanly updates the
-        // existing row/file in place instead of erroring or duplicating.
+        // $invoiceNumber above is the existing row's number on a retry (not
+        // a freshly allocated one), so this INSERT still hits the UNIQUE
+        // constraint on invoice_number for that case and cleanly updates
+        // the existing row/file in place instead of erroring or duplicating.
         $stmt = db()->prepare(
             'INSERT INTO invoices (order_id, invoice_number, language, pdf_path) VALUES (?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE language = VALUES(language), pdf_path = VALUES(pdf_path)'

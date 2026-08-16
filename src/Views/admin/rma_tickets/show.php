@@ -22,6 +22,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/rma-tickets/' . (int)$ticket->id;
 </div>
 
 <div class="card">
+  <p><strong><?= e(__('admin.numbering.type_rma_ticket')) ?>:</strong> <?= e($ticket->rmaNumber ?? '-') ?></p>
   <p><strong><?= e(__('common.email')) ?>:</strong> <?= e($order['customer_email'] ?? '') ?></p>
   <p><strong><?= e(__('admin.products.name')) ?>:</strong> <?= e($item['product_name'] ?? '') ?></p>
   <p><strong><?= e(__('admin.rma_tickets.claim_type')) ?>:</strong> <?= e(ucfirst($ticket->warrantyClaimType)) ?></p>

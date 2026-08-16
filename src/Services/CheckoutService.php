@@ -27,6 +27,7 @@ final class CheckoutService
         private readonly Cart $cart,
         private readonly PaymentGatewayFactory $gateways,
         private readonly SettingsRepository $settings,
+        private readonly NumberSequenceService $sequences,
     ) {
     }
 
@@ -296,7 +297,7 @@ final class CheckoutService
         // Generate the invoice PDF (in the order's language) before emailing
         // the confirmation, so it can go out as an attachment.
         try {
-            InvoiceGenerator::generateForOrder($order->toRow(), $orderItems);
+            InvoiceGenerator::generateForOrder($order->toRow(), $orderItems, $this->sequences);
         } catch (\Throwable $e) {
             error_log('Invoice generation failed for order ' . $orderNumber . ': ' . $e->getMessage());
         }

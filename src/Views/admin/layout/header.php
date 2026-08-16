@@ -39,6 +39,7 @@ $navItems = [
     '/admin/menus'         => ['label' => __('admin.menus'), 'capability' => 'menus'],
     '/admin/email-templates' => ['label' => __('admin.email_templates'), 'capability' => 'settings'],
     '/admin/tax-rates'     => ['label' => __('admin.tax_rates'), 'capability' => 'settings'],
+    '/admin/numbering'     => ['label' => __('admin.numbering'), 'capability' => 'settings'],
     '/admin/shipping'      => ['label' => __('admin.shipping'), 'capability' => 'shipping'],
     '/admin/orders'        => ['label' => __('admin.orders'), 'capability' => 'orders'],
     '/admin/finance'       => ['label' => __('admin.finance'), 'capability' => 'finance'],

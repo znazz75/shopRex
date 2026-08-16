@@ -33,10 +33,12 @@ $badgeClass = static fn (string $status): string => match ($status) {
 </form>
 
 <table class="data-table">
-  <thead><tr><th><?= e(__('admin.dashboard.order_number')) ?></th><th><?= e(__('admin.products.name')) ?></th><th><?= e(__('admin.rma_tickets.claim_type')) ?></th><th><?= e(__('common.status')) ?></th><th><?= e(__('common.date')) ?></th><th></th></tr></thead>
+  <thead><tr><th><?= e(__('admin.numbering.type_rma_ticket')) ?></th><th><?= e(__('admin.dashboard.order_number')) ?></th><th><?= e(__('admin.products.name')) ?></th><th><?= e(__('admin.rma_tickets.claim_type')) ?></th><th><?= e(__('common.status')) ?></th><th><?= e(__('common.date')) ?></th><th></th></tr></thead>
   <tbody>
     <?php foreach ($tickets as $t): ?>
       <tr>
+        <?php /* rma_number is NULL for any ticket submitted before Admin -> Numbering existed. */ ?>
+        <td><?= e($t['rma_number'] ?? '-') ?></td>
         <td><?= e($t['order_number']) ?></td>
         <td><?= e($t['product_name']) ?></td>
         <td><?= e(ucfirst($t['warranty_claim_type'])) ?></td>
@@ -45,6 +47,6 @@ $badgeClass = static fn (string $status): string => match ($status) {
         <td><a class="btn btn-sm btn-secondary" href="<?= e($base) ?>/<?= (int)$t['id'] ?>"><?= e(__('admin.customers.view')) ?></a></td>
       </tr>
     <?php endforeach; ?>
-    <?php if (empty($tickets)): ?><tr><td colspan="6"><?= e(__('admin.rma_tickets.none_yet')) ?></td></tr><?php endif; ?>
+    <?php if (empty($tickets)): ?><tr><td colspan="7"><?= e(__('admin.rma_tickets.none_yet')) ?></td></tr><?php endif; ?>
   </tbody>
 </table>

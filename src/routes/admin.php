@@ -27,6 +27,7 @@ use ShopRex\Controllers\Admin\ImageCropController;
 use ShopRex\Controllers\Admin\InventoryAdminController;
 use ShopRex\Controllers\Admin\LegalDocumentAdminController;
 use ShopRex\Controllers\Admin\MenuAdminController;
+use ShopRex\Controllers\Admin\NumberingAdminController;
 use ShopRex\Controllers\Admin\OrderAdminController;
 use ShopRex\Controllers\Admin\PageAdminController;
 use ShopRex\Controllers\Admin\ProductAdminController;
@@ -57,6 +58,9 @@ return function (Router $router, Container $container): void {
 
     $router->get('/admin/tax-rates', [TaxRateAdminController::class, 'index'])->capability('settings');
     $router->post('/admin/tax-rates', [TaxRateAdminController::class, 'save'])->capability('settings');
+
+    $router->get('/admin/numbering', [NumberingAdminController::class, 'index'])->capability('settings');
+    $router->post('/admin/numbering', [NumberingAdminController::class, 'save'])->capability('settings');
 
     $router->get('/admin/admins', [AdminUserAdminController::class, 'index'])->capability('admins');
     $router->post('/admin/admins', [AdminUserAdminController::class, 'save'])->capability('admins');

@@ -6,6 +6,7 @@ use ShopRex\Core\Container;
 use ShopRex\Core\Request;
 use ShopRex\Core\Response;
 use ShopRex\Services\GdprService;
+use ShopRex\Services\NumberSequenceService;
 
 /**
  * Manages the shop's customer accounts from the back office: search/list,
@@ -28,12 +29,17 @@ final class CustomerAdminController extends AdminCrudController
     // counts as personal data" and "how to scrub an order vs a customer" rules
     // live in one place shared with any other caller.
     private readonly GdprService $gdpr;
+    // Issues a test account's customer_number (Admin -> Numbering) - same
+    // sequence real customers get, so the customer list never has to
+    // special-case test accounts to show a number.
+    private readonly NumberSequenceService $sequences;
 
     public function __construct(Request $request, Container $container)
     {
         parent::__construct($request, $container);
         $this->pdo = $container->make(\PDO::class);
         $this->gdpr = $container->make(GdprService::class);
+        $this->sequences = $container->make(NumberSequenceService::class);
     }
 
     /** Lists customers (optionally filtered by a name/email search term), each annotated with their real order count, lifetime spend, and separately-counted test-order count. */
@@ -103,10 +109,11 @@ final class CustomerAdminController extends AdminCrudController
         if (!$errors) {
             // is_test_account hardcoded to 1 - this insert only ever creates test
             // accounts, never a real customer.
+            $customerNumber = $this->sequences->next('customer');
             $stmt = $this->pdo->prepare(
-                'INSERT INTO customers (first_name, last_name, email, password_hash, is_test_account) VALUES (?, ?, ?, ?, 1)'
+                'INSERT INTO customers (customer_number, first_name, last_name, email, password_hash, is_test_account) VALUES (?, ?, ?, ?, ?, 1)'
             );
-            $stmt->execute([$firstName, $lastName, $email, password_hash($password, PASSWORD_DEFAULT)]);
+            $stmt->execute([$customerNumber, $firstName, $lastName, $email, password_hash($password, PASSWORD_DEFAULT)]);
             $this->flash('success', __('admin.customers.test_user_created', ['email' => $email]));
             return $this->redirect('/admin/customers');
         }

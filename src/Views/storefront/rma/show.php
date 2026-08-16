@@ -47,6 +47,8 @@
                 // "In Review" for display. ?>
           <?php foreach ($ticketsByItem[$item['id']] ?? [] as $ticket): ?>
             <div class="alert alert-info py-2 small">
+              <?php /* rmaNumber is null for a ticket filed before Admin -> Numbering existed - just skip the "Ticket #..." line for those rather than showing a blank number. */ ?>
+              <?php if ($ticket->rmaNumber): ?><strong><?= e(__('rma.ticket_number', ['number' => $ticket->rmaNumber])) ?></strong> - <?php endif; ?>
               <?= e(__('rma.existing_ticket', ['status' => ucwords(str_replace('_', ' ', $ticket->status))])) ?>
             </div>
           <?php endforeach; ?>

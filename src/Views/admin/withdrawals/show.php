@@ -24,6 +24,7 @@ $base = rtrim(SITE_URL, '/') . '/admin/withdrawals/' . (int)$withdrawal->id;
 </div>
 
 <div class="card">
+  <p><strong><?= e(__('admin.numbering.type_withdrawal_request')) ?>:</strong> <?= e($withdrawal->withdrawalNumber ?? '-') ?></p>
   <p><strong><?= e(__('common.email')) ?>:</strong> <?= e($order['customer_email'] ?? '') ?></p>
   <?php /* isPastDeadline() compares deadlineAt (computed at request-creation time from Models\WithdrawalRequest::calculateDeadline() - the fixed legal cooling-off window) against now - purely informational here, it doesn't stop the admin from still approving/rejecting a late request below. */ ?>
   <p><strong><?= e(__('admin.withdrawals.deadline')) ?>:</strong> <?= e(formatLocalDate($withdrawal->deadlineAt)) ?>

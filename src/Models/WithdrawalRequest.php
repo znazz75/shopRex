@@ -2,6 +2,7 @@
 
 namespace ShopRex\Models;
 
+use ShopRex\Services\NumberSequenceService;
 use ShopRex\Services\SettingsRepository;
 
 /**
@@ -15,6 +16,9 @@ class WithdrawalRequest extends CustomerRequest
 {
     protected static string $table = 'withdrawal_requests';
 
+    // Admin-configurable via Admin -> Numbering (see Services\NumberSequenceService);
+    // null for any request submitted before that feature existed.
+    public ?string $withdrawalNumber = null;
     // Free-text reason the customer gave, if any - EU/German withdrawal law
     // doesn't require a reason to be given at all, so this is optional context only.
     public ?string $reason = null;
@@ -73,7 +77,7 @@ class WithdrawalRequest extends CustomerRequest
      * $order and not be hygiene-excluded - this method trusts its input,
      * it doesn't re-derive eligibility itself.
      */
-    public static function createFor(Order $order, ?array $customer, string $reason, array $orderItemIds, \PDO $pdo, SettingsRepository $settings): self
+    public static function createFor(Order $order, ?array $customer, string $reason, array $orderItemIds, \PDO $pdo, SettingsRepository $settings, NumberSequenceService $sequences): self
     {
         // The deadline is computed and stored once here, at submission time
         // - not recalculated later from live settings - so a subsequent
@@ -81,15 +85,23 @@ class WithdrawalRequest extends CustomerRequest
         // setting can't retroactively move an already-filed request's deadline.
         $deadline = self::calculateDeadline($order, $settings);
 
+        // Allocated BEFORE the transaction below opens, not inside it -
+        // NumberSequenceService::next() runs its own internal
+        // beginTransaction()/commit(), and PDO doesn't support real nested
+        // transactions. If the insert below then fails, this number is
+        // simply left unused (a gap, not a collision - see
+        // NumberSequenceService's docblock).
+        $withdrawalNumber = $sequences->next('withdrawal_request');
+
         // Both the parent request row and its per-item rows must be written
         // together - a transaction guarantees a request is never left with
         // zero items (or items without a parent request) if something fails midway.
         $pdo->beginTransaction();
         try {
             $stmt = $pdo->prepare(
-                'INSERT INTO withdrawal_requests (order_id, customer_id, reason, status, deadline_at) VALUES (?, ?, ?, "submitted", ?)'
+                'INSERT INTO withdrawal_requests (withdrawal_number, order_id, customer_id, reason, status, deadline_at) VALUES (?, ?, ?, ?, "submitted", ?)'
             );
-            $stmt->execute([$order->id, $customer['id'] ?? null, $reason !== '' ? $reason : null, $deadline->format('Y-m-d H:i:s')]);
+            $stmt->execute([$withdrawalNumber, $order->id, $customer['id'] ?? null, $reason !== '' ? $reason : null, $deadline->format('Y-m-d H:i:s')]);
             $id = (int)$pdo->lastInsertId();
 
             // One row per covered order item - this is what lets a

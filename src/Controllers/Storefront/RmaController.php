@@ -12,6 +12,7 @@ use ShopRex\Models\Product;
 use ShopRex\Models\RmaTicket;
 use ShopRex\Services\I18n;
 use ShopRex\Services\Mailer;
+use ShopRex\Services\NumberSequenceService;
 use ShopRex\Services\SettingsRepository;
 
 /**
@@ -28,12 +29,14 @@ final class RmaController extends Controller
 
     private readonly \PDO $pdo; // Raw DB handle for the item/eligibility and existing-tickets queries below.
     private readonly SettingsRepository $settings; // Used here only to look up the shop's notification email address.
+    private readonly NumberSequenceService $sequences; // Issues each new ticket's rma_number (Admin -> Numbering).
 
     public function __construct(Request $request, Container $container)
     {
         parent::__construct($request, $container);
         $this->pdo = $container->make(\PDO::class);
         $this->settings = $container->make(SettingsRepository::class);
+        $this->sequences = $container->make(NumberSequenceService::class);
     }
 
     /** Shows the RMA form for one order: every item, whether each is currently eligible for a statutory and/or manufacturer warranty claim, and any tickets already filed against it. */
@@ -108,7 +111,7 @@ final class RmaController extends Controller
         }
 
         $customer = CustomerAuth::current();
-        $ticket = RmaTicket::createFor($order->id, $orderItemId, $customer, $claimType, $description, $this->pdo);
+        $ticket = RmaTicket::createFor($order->id, $orderItemId, $customer, $claimType, $description, $this->pdo, $this->sequences);
 
         // From here on, the ticket itself already exists and is the part
         // that actually matters - everything below (photo attachments,

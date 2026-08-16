@@ -247,6 +247,31 @@ construction*). Not every setting has a seeded row in
 check `Controllers\Admin\SettingsAdminController` for which pattern an
 existing setting uses before copying it.
 
+**Sequential numbering** (Admin → Numbering, v3.05): `Services\NumberSequenceService::next($type)`
+allocates admin-configurable, formatted numbers for `customer`,
+`invoice`, `rma_ticket`, and `withdrawal_request` — one row per type in
+the `number_sequences` table (prefix/suffix/optional PHP `date()`-format
+date component/zero-padding/start value/increment/live counter/optional
+reset-on-date-change), all four seeded in `sql/schema.sql` since `type`
+is a fixed, code-defined set rather than something `Controllers\Admin\NumberingAdminController`
+lets an admin create or delete. `next()` allocates atomically via
+`SELECT ... FOR UPDATE` inside its own transaction (same pattern as the
+stock-decrement and payment-capture-idempotency fixes in `Services\CheckoutService`/
+`Models\Order::markPaid()` — a number allocated but never used just
+leaves a gap, not a collision, which is standard/accepted for sequence
+generators). New records only — turning this on does **not** backfill
+existing customers/invoices/RMA tickets/withdrawal requests, which keep
+showing a blank/dash number. **Order numbers are deliberately excluded**
+and keep their existing date+random scheme (`Services\CheckoutService::generateOrderNumber()`)
+— they're used as a bearer-token-like guest-access identifier, and
+`docs/SECURITY_AUDIT.md` finding #4 specifically fixed order numbers
+being brute-forceable, so making them sequential/guessable would
+reintroduce that. `Services\InvoiceGenerator::generateForOrder()`'s
+"safe to call twice for the same order" contract still holds even though
+invoice numbers are no longer purely deterministic from the order id: it
+checks for an already-issued number for that `order_id` first and only
+calls `next('invoice')` when there isn't one yet.
+
 **New legal/compliance domain** (v2.00): `Models\CustomerRequest`
 (abstract) is the shared base for `WithdrawalRequest` (order-level, fixed
 window from `Models\WithdrawalRequest::calculateDeadline()`, hygiene

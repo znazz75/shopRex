@@ -11,6 +11,7 @@ use ShopRex\Models\Order;
 use ShopRex\Models\WithdrawalRequest;
 use ShopRex\Services\I18n;
 use ShopRex\Services\Mailer;
+use ShopRex\Services\NumberSequenceService;
 use ShopRex\Services\SettingsRepository;
 
 /**
@@ -25,12 +26,14 @@ final class WithdrawalController extends Controller
 {
     private readonly \PDO $pdo; // Raw DB handle for the item-listing query below.
     private readonly SettingsRepository $settings; // Read here for whatever setting WithdrawalRequest::calculateDeadline() needs (the withdrawal window length).
+    private readonly NumberSequenceService $sequences; // Issues each new request's withdrawal_number (Admin -> Numbering).
 
     public function __construct(Request $request, Container $container)
     {
         parent::__construct($request, $container);
         $this->pdo = $container->make(\PDO::class);
         $this->settings = $container->make(SettingsRepository::class);
+        $this->sequences = $container->make(NumberSequenceService::class);
     }
 
     /** Shows the withdrawal form for one order: which items are eligible, the calculated deadline, and any existing request already on file for it. */
@@ -111,7 +114,7 @@ final class WithdrawalController extends Controller
 
         $reason = trim((string)$request->post('reason', ''));
         $customer = CustomerAuth::current();
-        $withdrawal = WithdrawalRequest::createFor($order, $customer, $reason, $validIds, $this->pdo, $this->settings);
+        $withdrawal = WithdrawalRequest::createFor($order, $customer, $reason, $validIds, $this->pdo, $this->settings, $this->sequences);
 
         // From here on, the withdrawal request itself already exists and
         // is the part that actually matters - the two notification emails

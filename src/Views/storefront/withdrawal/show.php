@@ -47,6 +47,10 @@
           // deadline has passed - show a warning instead of a form; (3)
           // still open - show the selectable item list + reason form. ?>
     <?php if ($existing): ?>
+      <?php /* withdrawalNumber is null for a request filed before Admin -> Numbering existed - just skip this line for those rather than showing a blank number. */ ?>
+      <?php if ($existing->withdrawalNumber): ?>
+        <p class="text-secondary small"><?= e(__('withdrawal.request_number', ['number' => $existing->withdrawalNumber])) ?></p>
+      <?php endif; ?>
       <div class="alert alert-info">
         <?= e(__('withdrawal.status_label')) ?>:
         <span class="badge text-bg-secondary"><?= e(ucwords(str_replace('_', ' ', $existing->status))) ?></span>
