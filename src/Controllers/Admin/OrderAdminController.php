@@ -9,6 +9,7 @@ use ShopRex\Core\Response;
 use ShopRex\Models\Order;
 use ShopRex\Services\Mailer;
 use ShopRex\Services\OrderEditingService;
+use ShopRex\Services\PaymentReminderService;
 
 /**
  * Direct port of admin/orders.php + admin/order_view.php. The admin's
@@ -29,12 +30,15 @@ final class OrderAdminController extends AdminCrudController
     // regeneration) - see its class docblock. Kept out of this controller
     // so those rules live in one place a non-admin caller could reuse too.
     private readonly OrderEditingService $orderEditing;
+    /** Sends a "your order is still unpaid" reminder for one order (see sendPaymentReminderNow() below) - the same service the daily cron job (admin/cron/payment_reminders.php) uses for automatic sends. */
+    private readonly PaymentReminderService $paymentReminders;
 
     public function __construct(Request $request, Container $container)
     {
         parent::__construct($request, $container);
         $this->pdo = $container->make(\PDO::class);
         $this->orderEditing = $container->make(OrderEditingService::class);
+        $this->paymentReminders = $container->make(PaymentReminderService::class);
     }
 
     /** GET /admin/orders - lists orders, optionally filtered by status and/or real-vs-test-order. */
@@ -298,6 +302,41 @@ final class OrderAdminController extends AdminCrudController
             $this->flash('success', __('admin.orders.resend.flash_sent', ['email' => $order['customer_email']]));
         } else {
             $this->flash('error', __('admin.orders.resend.flash_failed'));
+        }
+
+        return $this->redirect('/admin/orders/' . $id);
+    }
+
+    /**
+     * POST /admin/orders/{id}/send-payment-reminder - manually sends a
+     * payment-reminder email for this order right now, regardless of the
+     * Admin -> Settings -> Payment Reminders automatic-send toggle (that
+     * setting only controls the daily cron sweep, not this button). Same
+     * 'orders' capability as resendInvoice() - sending an email has no
+     * financial/stock effect. Available whenever the order is still
+     * unpaid, even if a reminder was already sent before (a manager may
+     * reasonably want to send a second one).
+     */
+    public function sendPaymentReminderNow(Request $request): Response
+    {
+        if ($csrfFailure = $this->requireCsrf()) {
+            return $csrfFailure;
+        }
+        $id = (int)$request->routeParam('id', 0);
+        $order = $this->fetchOrder($id);
+        if (!$order) {
+            $this->flash('error', __('admin.order_view.not_found'));
+            return $this->redirect('/admin/orders');
+        }
+        if ($order['payment_status'] !== 'pending') {
+            $this->flash('error', __('admin.orders.payment_reminder.not_unpaid'));
+            return $this->redirect('/admin/orders/' . $id);
+        }
+
+        if ($this->paymentReminders->sendReminder($order)) {
+            $this->flash('success', __('admin.orders.payment_reminder.flash_sent', ['email' => $order['customer_email']]));
+        } else {
+            $this->flash('error', __('admin.orders.payment_reminder.flash_failed'));
         }
 
         return $this->redirect('/admin/orders/' . $id);

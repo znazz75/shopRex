@@ -506,6 +506,24 @@ simple invoices, swap in a Composer package like `dompdf/dompdf` instead.
   blocked by `admin/cron/.htaccess` as a second layer. Admins can also
   trigger it on demand from **Admin → Settings → Run Cleanup Now**. Test
   accounts (`is_test_account`) are never touched by any of this.
+- **Automated payment reminders**: **Admin → Settings → Payment Reminders**
+  sets how many days an order can go unpaid before it's eligible for a
+  reminder email, plus a toggle for whether that reminder is sent
+  automatically or only ever by hand. Only applies to bank transfer /
+  pay-on-invoice orders (PayPal/card orders settle via a gateway
+  callback). `Services\PaymentReminderService::runAutomaticReminders()`
+  is the automatic side (`admin/cron/payment_reminders.php` is the CLI
+  entry point - safe to run daily regardless of the toggle, since the
+  service itself no-ops when it's off):
+  ```bash
+  0 4 * * * php /path/to/shopRex/admin/cron/payment_reminders.php
+  ```
+  Same HTTP-blocked/CLI-only posture as the GDPR cleanup script above. A
+  manager or admin can also send one manually at any time from an order's
+  own detail page's **Send Payment Reminder** button, regardless of the
+  automatic-send setting - one reminder is sent per order either way (a
+  second manual send is still always allowed). Test orders
+  (`is_test_order`) are never touched by any of this.
 
 ## External libraries
 
@@ -561,6 +579,7 @@ src/Support/            Presentation-only static renderers (Pagination, menu tre
 assets/                Storefront CSS/JS/images
 admin/assets/           Admin CSS/JS
 admin/cron/gdpr_cleanup.php  CLI-only entry point for the inactivity cleanup (see Data protection)
+admin/cron/payment_reminders.php  CLI-only entry point for automatic payment reminders (see above)
 themes/                 Installable layout packages (see Frontend theme below) - themes/default/,
                        themes/sidebar/, and any you add; each is a theme.json + style.css (the
                        PHP templates themselves live under src/Views/storefront/theme/<key>/)

@@ -42,6 +42,7 @@ $availableLangs = getEnabledLanguages(); // Only admin-enabled languages - the l
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?= isset($pageTitle) ? e($pageTitle) . ' - ' : '' ?><?= e($shopName) ?></title>
+  <?php if ($favicon = faviconUrl()): ?><link rel="icon" href="<?= e($favicon) ?>"><?php endif; ?>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
   <link rel="stylesheet" href="<?= rtrim(SITE_URL, '/') ?>/assets/css/style.css">

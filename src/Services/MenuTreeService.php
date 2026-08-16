@@ -16,8 +16,11 @@ final class MenuTreeService
     // ask for the same location's tree more than once per request.
     private array $treeCache = [];
 
-    public function __construct(private readonly \PDO $pdo, private readonly CategoryTreeService $categories)
-    {
+    public function __construct(
+        private readonly \PDO $pdo,
+        private readonly CategoryTreeService $categories,
+        private readonly SettingsRepository $settings
+    ) {
     }
 
     /** Turns a flat list of menu-item rows (each with a parent_id) into a nested tree, attaching each row's direct children under a 'children' key - same shape/logic as CategoryTreeService::buildTree(), kept separate because menu items and categories are different tables/entities. */
@@ -34,7 +37,16 @@ final class MenuTreeService
         return $branch;
     }
 
-    /** Nested menu tree for a location ('main' or 'footer'), active items only. */
+    /**
+     * Nested menu tree for a location ('main' or 'footer'), active items
+     * only. Labels here are always the DEFAULT language (the raw
+     * menu_items.label column) - this is the method the ADMIN menu editor
+     * uses (Controllers\Admin\MenuAdminController), where a translated
+     * label would be actively wrong (an admin managing menus shouldn't see
+     * labels shift depending on their own UI language). Storefront callers
+     * that need a translated label should use translatedTree() below
+     * instead.
+     */
     public function tree(string $location): array
     {
         if (!isset($this->treeCache[$location])) {
@@ -43,6 +55,44 @@ final class MenuTreeService
             $this->treeCache[$location] = $this->buildTree($stmt->fetchAll());
         }
         return $this->treeCache[$location];
+    }
+
+    /**
+     * Same tree as tree(), but with every node's 'label' overlaid with its
+     * translation into $lang (falling back to the default-language label
+     * where no translation exists yet) - for storefront consumers only
+     * (see src/view-helpers.php's getMenuTree(), used by the header/footer
+     * nav templates). Does not touch tree()'s own cache - this is a
+     * translated copy built fresh from it each call. Mirrors
+     * Services\CategoryTreeService::translatedTree() exactly.
+     */
+    public function translatedTree(string $location, ?string $lang = null): array
+    {
+        $lang = $lang ?? I18n::current();
+        $flat = $this->flatten($this->tree($location));
+        $this->overlayLabels($flat, $lang);
+
+        foreach ($flat as &$row) {
+            unset($row['depth']);
+        }
+        unset($row);
+        return $this->buildTree($flat);
+    }
+
+    /** Collapses a nested tree back into a flat, depth-first list with a 'depth' field added to each row - same shape as CategoryTreeService::flatten(), used here only by translatedTree()'s overlay-then-rebuild step. */
+    public function flatten(array $tree, int $depth = 0): array
+    {
+        $flat = [];
+        foreach ($tree as $node) {
+            $children = $node['children'] ?? [];
+            unset($node['children']);
+            $node['depth'] = $depth;
+            $flat[] = $node;
+            if ($children) {
+                $flat = array_merge($flat, $this->flatten($children, $depth + 1));
+            }
+        }
+        return $flat;
     }
 
     /** Every menu-item ID in $itemId's subtree, including itself - e.g. used to stop an admin from re-parenting a menu item underneath its own descendant (see isOrDescendant()). */
@@ -93,5 +143,51 @@ final class MenuTreeService
                 $val = $item['link_value'];
                 return preg_match('~^https?://~i', $val) ? $val : $base . '/' . ltrim($val, '/');
         }
+    }
+
+    /**
+     * Overlays each row's 'label' with its menu_item_translations.label
+     * translation into $lang, in place - mirrors
+     * Services\CategoryTreeService::overlayNames() exactly: a row is only
+     * touched when a non-empty translation actually exists for it,
+     * otherwise it keeps whatever label it already had (the
+     * default-language menu_items.label column). A no-op when $lang is the
+     * shop's own default language - the default language's label already
+     * lives on the row itself, there's nothing to overlay.
+     *
+     * @param array $rows Flat list of menu-item rows, each needing an 'id' key - modified by reference.
+     */
+    public function overlayLabels(array &$rows, string $lang): void
+    {
+        if (!$rows || $lang === $this->settings->get('default_language', 'en')) {
+            return;
+        }
+
+        $ids = array_column($rows, 'id');
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->pdo->prepare(
+            "SELECT menu_item_id, label FROM menu_item_translations WHERE language = ? AND menu_item_id IN ($placeholders) AND label IS NOT NULL AND label != ''"
+        );
+        $stmt->execute([$lang, ...$ids]);
+        $labelsByItemId = array_column($stmt->fetchAll(), 'label', 'menu_item_id');
+
+        foreach ($rows as &$row) {
+            if (!empty($labelsByItemId[$row['id']])) {
+                $row['label'] = $labelsByItemId[$row['id']];
+            }
+        }
+        unset($row);
+    }
+
+    /** Every language's label row for $itemId, keyed by language - for the admin edit form's per-language tabs. Mirrors Services\CategoryTreeService::translationsForCategory(). */
+    public function translationsForMenuItem(int $itemId): array
+    {
+        $stmt = $this->pdo->prepare('SELECT language, label FROM menu_item_translations WHERE menu_item_id = ?');
+        $stmt->execute([$itemId]);
+        $byLang = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $byLang[$row['language']] = $row;
+        }
+        return $byLang;
     }
 }

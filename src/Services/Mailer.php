@@ -320,6 +320,30 @@ final class Mailer
         );
     }
 
+    /**
+     * Sends a "your order is still unpaid" reminder - Services\PaymentReminderService
+     * is the only caller (both the automatic cron path and the manual
+     * "Send Reminder Now" admin action go through it, never this method
+     * directly), which is also what stamps orders.payment_reminder_sent_at
+     * afterwards. Deliberately avoids renderOrderItemsTable()/any other
+     * __()-based helper - see sendInvoiceEmail()'s docblock for why: __()
+     * reads the ADMIN's own browsing language on an admin-triggered
+     * manual send, not the order's language. Every value passed into
+     * render() below is a plain, already-known string/number.
+     */
+    public static function sendPaymentReminder(array $order, int $daysSinceOrder): bool
+    {
+        $lang = $order['language'] ?? 'en';
+        $rendered = self::render('payment_reminder', $lang, [
+            'customer_name'    => trim($order['shipping_name'] ?? ''),
+            'order_number'     => $order['order_number'],
+            'order_date'       => substr((string)$order['created_at'], 0, 10),
+            'order_total'      => formatPrice((float)$order['total']),
+            'days_since_order' => $daysSinceOrder,
+        ]);
+        return self::send($order['customer_email'], $rendered['subject'], $rendered['html'], 'payment_reminder', (int)$order['id']);
+    }
+
     /** Notifies a customer that their order's status changed (e.g. "shipped") - includes any admin-written note verbatim, HTML-escaped with line breaks preserved. */
     public static function sendOrderStatusUpdate(array $order): bool
     {

@@ -27,6 +27,16 @@
       <button class="btn btn-secondary" type="submit"><?= e(__('admin.orders.resend.submit')) ?></button>
     </form>
   <?php endif; ?>
+  <?php /* v3.10 - Services\PaymentReminderService. Only shown while the order is actually still unpaid; always available regardless of the Admin -> Settings -> Payment Reminders automatic-send toggle, which only controls the daily cron sweep. */ ?>
+  <?php if ($order['payment_status'] === 'pending'): ?>
+    <form method="post" action="<?= rtrim(SITE_URL, '/') ?>/admin/orders/<?= (int)$order['id'] ?>/send-payment-reminder" style="display:inline;">
+      <?= csrfField() ?>
+      <button class="btn btn-secondary" type="submit"><?= e(__('admin.orders.payment_reminder.submit')) ?></button>
+    </form>
+    <?php if (!empty($order['payment_reminder_sent_at'])): ?>
+      <small style="color:var(--color-muted);display:block;margin-top:4px;"><?= e(__('admin.orders.payment_reminder.last_sent', ['date' => formatLocalDate($order['payment_reminder_sent_at'])])) ?></small>
+    <?php endif; ?>
+  <?php endif; ?>
 </div>
 
 <?php /* Extra, more prominent warning banner (beyond the small badge in the heading) reminding the admin this order used TestGateway and never touched real stock/finance figures - see CLAUDE.md's "Test accounts" section. */ ?>

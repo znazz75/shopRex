@@ -8,6 +8,55 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [3.10] - 2026-08-16
+
+New features: multilingual footer/menu labels, a site favicon setting,
+configurable payment reminder emails, and a general admin action audit log.
+
+### Added
+- **Multilingual menu labels**: Admin -> Menus' existing per-item form
+  gains a per-language tab bar (mirrors the category-name tabs added in
+  v3.09) - a menu item's default-language label still lives on
+  `menu_items.label` (required, unchanged); every other language is an
+  optional translation in the new `menu_item_translations` table, falling
+  back to the default label where untranslated. Fixes footer links like
+  "Legal Notice"/"Privacy Policy" staying in the default language
+  regardless of the visitor's chosen language - the CMS page content
+  those links point to was already fully multilingual, only the link
+  *label* itself wasn't. `Services\MenuTreeService` gained
+  `translatedTree()`/`overlayLabels()`/`translationsForMenuItem()`,
+  mirroring `CategoryTreeService`'s v3.09 additions exactly; the admin
+  picker (`tree()`) is unchanged, still raw/default-language.
+- **Site favicon**: Admin -> Settings -> Branding, a new standalone
+  upload form (`.ico`/`.png` only, 1MB cap, extension + content-sniff
+  validated same as every other upload in this app). Stored in the new
+  `uploads/branding/` directory, referenced via the `favicon_path`
+  setting and a new `faviconUrl()` helper, emitted as `<link rel="icon">`
+  on both the storefront and admin `<head>`.
+- **Payment reminders**: Admin -> Settings -> Payment Reminders configures
+  how many days an order can stay unpaid before it's eligible for a
+  reminder email, and whether that reminder fires automatically (daily
+  cron, `admin/cron/payment_reminders.php`) or only ever by hand. Only
+  applies to bank-transfer/pay-on-invoice orders (PayPal/card orders
+  settle via gateway callback). New `Services\PaymentReminderService`
+  is the single implementation both the cron and the order page's new
+  "Send Payment Reminder" button (manager/admin, always available
+  regardless of the automatic-send setting) go through; `orders` gained a
+  `payment_reminder_sent_at` column so one reminder isn't sent twice by
+  the automatic sweep. Admin -> Finance gained a read-only "Overdue
+  Unpaid Orders" list for visibility.
+- **Admin action audit log**: every mutating (POST) admin request is now
+  recorded in the new `admin_action_log` table (who, when, method+path,
+  capability, response status) - written from a single choke point in
+  `Core\Router::dispatch()` rather than a hand-written call in each of
+  the 23 admin controllers, so it automatically covers new admin actions
+  added in the future too. New Admin -> Audit Log screen
+  (`Controllers\Admin\AuditLogAdminController`), Super Admin only (new
+  `audit_log` capability). Deliberately records no POST-body snapshot -
+  several admin forms carry plaintext-sensitive fields (a new admin
+  password, a payment gateway secret key) this app has no safe way to
+  redact.
+
 ## [3.09] - 2026-08-16
 
 New feature: multilingual category names.

@@ -6,6 +6,7 @@ use ShopRex\Core\Container;
 use ShopRex\Core\Request;
 use ShopRex\Core\Response;
 use ShopRex\Services\AnnualReportGenerator;
+use ShopRex\Services\SettingsRepository;
 
 /**
  * Direct port of admin/finance.php - read-only reporting page, no forms.
@@ -21,12 +22,15 @@ final class FinanceAdminController extends AdminCrudController
     /** Raw database handle for this controller's read-only aggregate queries against `orders`/`transactions`. */
     private readonly \PDO $pdo;
     private readonly AnnualReportGenerator $annualReportGenerator;
+    /** Used here just to read the payment-reminder days threshold, for the "Overdue Unpaid Orders" list below (Services\PaymentReminderService uses the same setting for its own eligibility query). */
+    private readonly SettingsRepository $settings;
 
     public function __construct(Request $request, Container $container)
     {
         parent::__construct($request, $container);
         $this->pdo = $container->make(\PDO::class);
         $this->annualReportGenerator = $container->make(AnnualReportGenerator::class);
+        $this->settings = $container->make(SettingsRepository::class);
     }
 
     /** GET /admin/finance - computes every figure/table on the finance dashboard in one request; every query below excludes `is_test_account`/`is_test_order` data (see CLAUDE.md's "Test accounts" section) so demo/test orders never inflate real revenue figures. */
@@ -83,9 +87,30 @@ final class FinanceAdminController extends AdminCrudController
             'y'
         );
 
+        // v3.10 - orders eligible for (or already sent) a payment reminder:
+        // same "pending, no-gateway-auto-capture method, not a test order,
+        // past the configured days threshold" query
+        // Services\PaymentReminderService::runAutomaticReminders() uses -
+        // just for visibility here, not a send action (that stays a
+        // single code path on the order detail page - see
+        // Controllers\Admin\OrderAdminController::sendPaymentReminderNow()).
+        $reminderDays = max(1, (int)$this->settings->get('payment_reminder_days', '7'));
+        $overdueUnpaidOrders = $this->pdo->prepare(
+            "SELECT o.id, o.order_number, o.created_at, o.total, o.payment_method, o.payment_reminder_sent_at,
+                    COALESCE(c.email, o.guest_email) AS customer_email
+             FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+             WHERE o.payment_status = 'pending'
+               AND o.payment_method IN ('bank_transfer', 'invoice')
+               AND o.is_test_order = 0
+               AND o.created_at <= NOW() - INTERVAL ? DAY
+             ORDER BY o.created_at ASC"
+        );
+        $overdueUnpaidOrders->execute([$reminderDays]);
+        $overdueUnpaidOrders = $overdueUnpaidOrders->fetchAll();
+
         return $this->render('finance/index', compact(
             'totalRevenue', 'totalRefunded', 'pendingPayments', 'avgOrderValue', 'testOrderCount',
-            'monthly', 'transactions', 'paymentMethodBreakdown', 'reportYears'
+            'monthly', 'transactions', 'paymentMethodBreakdown', 'reportYears', 'overdueUnpaidOrders', 'reminderDays'
         ) + ['pageTitle' => __('admin.finance')]);
     }
 

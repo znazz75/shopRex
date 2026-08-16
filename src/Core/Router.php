@@ -103,7 +103,30 @@ final class Router
                 return AdminAuth::denyResponse();
             }
 
-            return $route->invoke($this->container, $request, $params);
+            $response = $route->invoke($this->container, $request, $params);
+
+            // Admin action audit log (v3.10, see Services\AuditLogService's
+            // docblock for why this lives here instead of a logging call
+            // in every admin controller): every mutating POST request
+            // dispatched to a Controllers\Admin\* handler is recorded,
+            // regardless of whether its route happens to be capability-
+            // gated (a couple of AJAX routes, e.g. /admin/menus/reorder,
+            // do their own inline check instead - they still pass through
+            // here normally). AuditLogService::record() itself no-ops when
+            // nobody is logged in, so this is a no-op for e.g. the
+            // /admin/login POST. Read-only GET admin pages and every
+            // storefront route (a Closure handler, or a controller outside
+            // the Admin namespace) are skipped by the checks below.
+            if (
+                $request->method() === 'POST'
+                && !($route->handler instanceof \Closure)
+                && str_starts_with($route->handler[0], 'ShopRex\\Controllers\\Admin\\')
+            ) {
+                $this->container->make(\ShopRex\Services\AuditLogService::class)
+                    ->record($request->method(), $path, $route->capability, $response->status());
+            }
+
+            return $response;
         }
 
         // If some route's path matched but none accepted this method, that's

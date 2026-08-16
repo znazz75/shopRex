@@ -131,6 +131,73 @@ final class SettingsAdminController extends AdminCrudController
     }
 
     /**
+     * Uploads (or replaces) the site favicon - its own small standalone
+     * form/route, like saveSiteUrl() above, since a file input can't join
+     * the main #settingsForm (not a multipart form). Only .ico/.png are
+     * accepted - deliberately no SVG, since a user-uploaded SVG can embed
+     * a <script> and this file is served directly from the site's own
+     * origin (a real XSS vector .ico/.png don't have). Extension +
+     * content-sniff validation mirrors every other upload in this app
+     * (docs/SECURITY_AUDIT.md finding #6) - see ProductImageController's
+     * upload branch for the .png case, LegalDocumentAdminController's for
+     * the "no PHP helper, sniff the magic bytes by hand" case (.ico's
+     * 4-byte header here instead of a PDF's).
+     */
+    public function saveFavicon(Request $request): Response
+    {
+        if ($csrfFailure = $this->requireCsrf()) {
+            return $csrfFailure;
+        }
+
+        $file = $request->file('favicon');
+        if (empty($file['name']) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            $this->flash('error', __('admin.settings.favicon_choose_file'));
+            return $this->redirect('/admin/settings');
+        }
+
+        $ext = strtolower((string)pathinfo($file['name'], PATHINFO_EXTENSION));
+        $isValid = false;
+        if ($ext === 'png') {
+            $imageInfo = @getimagesize($file['tmp_name']);
+            $isValid = $imageInfo && $imageInfo['mime'] === 'image/png';
+        } elseif ($ext === 'ico') {
+            // getimagesize() doesn't reliably recognize .ico files, so
+            // sniff the format's 4-byte magic header directly instead.
+            $isValid = (string)file_get_contents($file['tmp_name'], false, null, 0, 4) === "\x00\x00\x01\x00";
+        }
+        // 1MB is generous for a favicon - catches an accidental wrong-file
+        // upload as much as it guards disk space.
+        if (!$isValid || $file['size'] > 1 * 1024 * 1024) {
+            $this->flash('error', __('admin.settings.favicon_file_requirements'));
+            return $this->redirect('/admin/settings');
+        }
+
+        if (!is_dir(BRANDING_UPLOAD_DIR)) {
+            mkdir(BRANDING_UPLOAD_DIR, 0755, true);
+        }
+        // uniqid() in the filename, never the uploaded name, same reasoning
+        // as every other upload path in this app.
+        $filename = 'favicon-' . uniqid() . '.' . $ext;
+        if (!move_uploaded_file($file['tmp_name'], BRANDING_UPLOAD_DIR . $filename)) {
+            $this->flash('error', __('admin.settings.favicon_save_upload_error'));
+            return $this->redirect('/admin/settings');
+        }
+
+        // The previous favicon file (if any) is only cleaned up after the
+        // new one is safely in place, and only if it's still the exact
+        // file this setting was pointing at (basename() guards against a
+        // stored value ever escaping BRANDING_UPLOAD_DIR).
+        $oldFilename = $this->settings->get('favicon_path');
+        if ($oldFilename && is_file(BRANDING_UPLOAD_DIR . basename($oldFilename))) {
+            @unlink(BRANDING_UPLOAD_DIR . basename($oldFilename));
+        }
+
+        $this->settings->upsert('favicon_path', $filename);
+        $this->flash('success', __('admin.settings.favicon_saved'));
+        return $this->redirect('/admin/settings');
+    }
+
+    /**
      * Saves every setting on the main form in one POST (everything except
      * the site URL, which has its own saveSiteUrl() above). Each group of
      * fields below is validated/whitelisted against a known-safe set of
@@ -231,6 +298,12 @@ final class SettingsAdminController extends AdminCrudController
         // immediately.
         $gdprMonths = max(4, (int)$request->post('gdpr_inactivity_months', 24));
         $this->settings->update('gdpr_inactivity_months', (string)$gdprMonths);
+
+        // Clamped to a 1-day minimum, same defensive reasoning as GDPR's
+        // month floor just above.
+        $reminderDays = max(1, (int)$request->post('payment_reminder_days', 7));
+        $this->settings->update('payment_reminder_days', (string)$reminderDays);
+        $this->settings->update('payment_reminder_auto_send', $request->post('payment_reminder_auto_send') ? '1' : '0');
 
         $this->flash('success', __('admin.settings.flash_saved'));
         return $this->redirect('/admin/settings');

@@ -13,7 +13,11 @@
  * form submit - see the `$('.menu-sortable').sortable(...)` block below.
  *
  * @var array       $errors         Validation error messages to show above the form.
+ * @var array       $availableLangs Enabled languages as [code => label], for the label language tabs.
+ * @var string      $lang           Which language's label is currently being edited/shown (a query-string driven tab, not the admin UI language).
+ * @var string      $defaultLang    The shop's default language - the Label field is required and drives menu_items.label only on this tab; any other tab's label is an optional translation.
  * @var array|null  $editItem       The menu item being edited, or null when the form is in "create new" mode.
+ * @var string      $labelForLang   The Label field's value for $lang specifically - menu_items.label on the default-language tab, that language's (possibly blank) translation otherwise.
  * @var string      $activeLocation Which menu is currently being managed: 'main' or 'footer'.
  * @var array       $categories     Every category, flattened with a 'depth' key, for the "link to a category" dropdown.
  * @var array       $pages          Every CMS page (slug + title), for the "link to a page" dropdown.
@@ -24,17 +28,27 @@
 <div class="page-header"><h1><?= e(__('admin.menus')) ?></h1></div>
 <?php foreach ($errors as $error): ?><div class="flash flash-error"><?= e($error) ?></div><?php endforeach; ?>
 
-<?php /* Switches which of the two menu locations (main nav / footer nav) the whole rest of this page is managing - everything below (form + item list) only ever shows $activeLocation's items. */ ?>
+<?php /* Switches which of the two menu locations (main nav / footer nav) the whole rest of this page is managing - everything below (form + item list) only ever shows $activeLocation's items. Carries the active language tab along too, so switching location doesn't reset it. */ ?>
 <div class="toolbar">
-  <a class="btn <?= $activeLocation === 'main' ? '' : 'btn-secondary' ?>" href="<?= rtrim(SITE_URL, '/') ?>/admin/menus?location=main"><?= e(__('admin.menus.main_menu')) ?></a>
-  <a class="btn <?= $activeLocation === 'footer' ? '' : 'btn-secondary' ?>" href="<?= rtrim(SITE_URL, '/') ?>/admin/menus?location=footer"><?= e(__('admin.menus.footer_menu')) ?></a>
+  <a class="btn <?= $activeLocation === 'main' ? '' : 'btn-secondary' ?>" href="<?= rtrim(SITE_URL, '/') ?>/admin/menus?location=main&lang=<?= e($lang) ?>"><?= e(__('admin.menus.main_menu')) ?></a>
+  <a class="btn <?= $activeLocation === 'footer' ? '' : 'btn-secondary' ?>" href="<?= rtrim(SITE_URL, '/') ?>/admin/menus?location=footer&lang=<?= e($lang) ?>"><?= e(__('admin.menus.footer_menu')) ?></a>
 </div>
+
+<?php /* Language tab bar for the item Label field - only shown when there's more than one language to switch between. Switching preserves which item is being edited (?edit=) and which location tab is active, so you don't lose your place. Same mechanism as Admin -> Categories' name/intro-text tabs (v3.09/v3.10). */ ?>
+<?php if (count($availableLangs) > 1): ?>
+  <div class="toolbar">
+    <?php foreach ($availableLangs as $code => $label): ?>
+      <a class="btn <?= $code === $lang ? '' : 'btn-secondary' ?>" href="<?= rtrim(SITE_URL, '/') ?>/admin/menus?location=<?= e($activeLocation) ?>&lang=<?= e($code) ?><?= !empty($editItem['id']) ? '&edit=' . (int)$editItem['id'] : '' ?>"><?= e($label) ?></a>
+    <?php endforeach; ?>
+  </div>
+<?php endif; ?>
 
 <div class="card">
   <h2 style="margin-top:0;"><?= !empty($editItem['id']) ? e(__('admin.menus.edit_title')) : e(__('admin.menus.add_title')) ?></h2>
   <form method="post" action="<?= rtrim(SITE_URL, '/') ?>/admin/menus">
     <?= csrfField() ?>
     <input type="hidden" name="id" value="<?= e($editItem['id'] ?? '') ?>">
+    <input type="hidden" name="language" value="<?= e($lang) ?>">
     <div class="form-grid">
       <div class="form-group">
         <label for="location"><?= e(__('admin.menus.menu_label')) ?></label>
@@ -43,7 +57,11 @@
           <option value="footer" <?= $activeLocation === 'footer' ? 'selected' : '' ?>><?= e(__('admin.menus.footer_menu')) ?></option>
         </select>
       </div>
-      <div class="form-group"><label for="label"><?= e(__('admin.menus.item_label')) ?></label><input type="text" id="label" name="label" required value="<?= e($editItem['label'] ?? '') ?>"></div>
+      <div class="form-group">
+        <?php /* Required + drives menu_items.label only on the default-language tab; on any other tab it's an optional translation (blank falls back to the default label on the storefront), same treatment as Categories' Name field. */ ?>
+        <label for="label"><?= $lang === $defaultLang ? e(__('admin.menus.item_label')) : e(__('admin.menus.label_lang_label', ['lang' => $availableLangs[$lang]])) ?></label>
+        <input type="text" id="label" name="label" <?= $lang === $defaultLang ? 'required' : '' ?> value="<?= e($labelForLang) ?>">
+      </div>
     </div>
     <div class="form-grid">
       <div class="form-group">
@@ -102,7 +120,7 @@
     </div>
 
     <button class="btn" type="submit"><?= e(__('admin.menus.save')) ?></button>
-    <?php if (!empty($editItem['id'])): ?><a class="btn btn-secondary" href="<?= rtrim(SITE_URL, '/') ?>/admin/menus?location=<?= e($activeLocation) ?>"><?= e(__('common.cancel')) ?></a><?php endif; ?>
+    <?php if (!empty($editItem['id'])): ?><a class="btn btn-secondary" href="<?= rtrim(SITE_URL, '/') ?>/admin/menus?location=<?= e($activeLocation) ?>&lang=<?= e($lang) ?>"><?= e(__('common.cancel')) ?></a><?php endif; ?>
   </form>
 </div>
 

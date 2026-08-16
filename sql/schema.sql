@@ -461,6 +461,11 @@ CREATE TABLE orders (
     -- for delivery date, since the app doesn't track real carrier
     -- delivery confirmation.
     shipped_at DATETIME NULL,
+    -- v3.10 - Services\PaymentReminderService. Stamped on every reminder
+    -- send (manual or automatic) - one reminder per order, not recurring;
+    -- also what stops the automatic sweep from re-sending one a manager
+    -- already sent by hand.
+    payment_reminder_sent_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
@@ -584,6 +589,33 @@ CREATE TABLE order_edit_log (
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------
+-- v3.10 - general admin-action audit log (Services\AuditLogService),
+-- distinct from the domain-specific order_edit_log/inventory_log above:
+-- written from a single choke point (Core\Router::dispatch()) for every
+-- mutating (POST) admin request, so it covers every admin controller
+-- automatically rather than relying on a hand-written call per action.
+-- username/role are denormalized snapshots so a row stays readable/
+-- attributable even after the admin account is later deleted (admin_id
+-- goes NULL, same reasoning as order_edit_log.admin_id). Deliberately no
+-- POST-body column - see Services\AuditLogService's docblock for why.
+-- Admin -> Audit Log (Controllers\Admin\AuditLogAdminController) is
+-- Super Admin only.
+-- ------------------------------------------------------------
+CREATE TABLE admin_action_log (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    admin_id INT UNSIGNED NULL,
+    username VARCHAR(150) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    method VARCHAR(10) NOT NULL,
+    path VARCHAR(255) NOT NULL,
+    capability VARCHAR(50) NULL,
+    status_code SMALLINT UNSIGNED NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (admin_id) REFERENCES admin_users(id) ON DELETE SET NULL,
+    INDEX idx_admin_action_log_created_at (created_at)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
 -- Email notification log
 -- ------------------------------------------------------------
 CREATE TABLE email_log (
@@ -657,6 +689,12 @@ INSERT INTO settings (setting_key, setting_value) VALUES
     ('default_language', 'en'),
     ('vat_enabled', '1'),
     ('gdpr_inactivity_months', '24'),
+    -- v3.10 - Services\PaymentReminderService. Days-unpaid threshold before
+    -- an order becomes eligible for a reminder; auto_send is off by
+    -- default (a manager still always has the manual "Send Reminder Now"
+    -- button on an order regardless of this setting).
+    ('payment_reminder_days', '7'),
+    ('payment_reminder_auto_send', '0'),
     -- Which payment methods checkout.php offers at all (Admin -> Settings
     -- -> Payment). 'invoice' has no on/off switch here - it's controlled
     -- entirely per-customer instead (customers.can_pay_on_invoice).
@@ -767,6 +805,12 @@ INSERT INTO email_templates (template_key, language, subject, body_html) VALUES
     ('invoice_resend', 'de', 'Ihre Rechnung zu {{shop_name}} Bestellung {{order_number}}',
      '<h2 style="margin-top:0;">Hier ist Ihre Rechnung, {{customer_name}}</h2><p>Wie gewünscht finden Sie anbei die Rechnung <strong>{{invoice_number}}</strong> zu Ihrer Bestellung <strong>{{order_number}}</strong>.</p>'),
 
+    -- v3.10 - Services\PaymentReminderService / Mailer::sendPaymentReminder().
+    ('payment_reminder', 'en', 'Payment reminder: your {{shop_name}} order {{order_number}}',
+     '<h2 style="margin-top:0;">Payment still pending, {{customer_name}}</h2><p>Order <strong>{{order_number}}</strong> from {{order_date}} (total <strong>{{order_total}}</strong>) has not been marked as paid yet - it has now been {{days_since_order}} day(s). Please arrange payment at your earliest convenience, or get in touch if you have already paid.</p>'),
+    ('payment_reminder', 'de', 'Zahlungserinnerung: Ihre {{shop_name}} Bestellung {{order_number}}',
+     '<h2 style="margin-top:0;">Zahlung steht noch aus, {{customer_name}}</h2><p>Bestellung <strong>{{order_number}}</strong> vom {{order_date}} (Gesamtbetrag <strong>{{order_total}}</strong>) wurde bisher nicht als bezahlt vermerkt - das sind mittlerweile {{days_since_order}} Tag(e). Bitte veranlassen Sie die Zahlung zeitnah, oder melden Sie sich bei uns, falls Sie bereits bezahlt haben.</p>'),
+
     ('order_status_update', 'en', 'Update on your {{shop_name}} order {{order_number}}',
      '<h2 style="margin-top:0;">Your order status has changed</h2><p>Order <strong>{{order_number}}</strong> is now:</p><p style="font-size:18px;font-weight:bold;text-transform:uppercase;color:#1f2937;">{{status}}</p>{{admin_notes}}'),
     ('order_status_update', 'de', 'Update zu Ihrer {{shop_name}} Bestellung {{order_number}}',
@@ -819,6 +863,23 @@ INSERT INTO menu_items (location, label, link_type, link_value, sort_order) VALU
     ('footer', 'Contact', 'custom', 'contact', 5),
     ('footer', 'Terms & Conditions', 'page', 'terms-conditions', 6),
     ('footer', 'Right of Withdrawal', 'page', 'right-of-withdrawal', 7);
+
+-- ------------------------------------------------------------
+-- v3.10 - per-language menu item labels (mirrors category_translations
+-- from v3.09, and the product_translations convention before that): the
+-- default-language label always lives on menu_items.label itself; every
+-- other language's label is an optional row here, falling back to the
+-- default label where untranslated. See Services\MenuTreeService's
+-- translatedTree()/overlayLabels()/translationsForMenuItem().
+-- ------------------------------------------------------------
+CREATE TABLE menu_item_translations (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    menu_item_id INT UNSIGNED NOT NULL,
+    language VARCHAR(5) NOT NULL,
+    label VARCHAR(150) NULL,
+    FOREIGN KEY (menu_item_id) REFERENCES menu_items(id) ON DELETE CASCADE,
+    UNIQUE KEY uniq_menu_item_lang (menu_item_id, language)
+) ENGINE=InnoDB;
 
 -- ================================================================
 -- v2.00 additions - OOP rewrite + legal/compliance features. See

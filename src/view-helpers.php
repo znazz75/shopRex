@@ -133,11 +133,20 @@ if (!function_exists('getFlashes')) {
     }
 }
 
+if (!function_exists('faviconUrl')) {
+    /** The site favicon's full URL (Admin -> Settings -> Branding), or null if none has been uploaded yet - used by both the storefront and admin <head> templates so a single setting keeps them in sync. */
+    function faviconUrl(): ?string
+    {
+        $filename = Registry::container()->make(SettingsRepository::class)->get('favicon_path');
+        return $filename ? BRANDING_UPLOAD_URL . $filename : null;
+    }
+}
+
 if (!function_exists('getMenuTree')) {
-    /** Returns the nested menu-item tree (parents with a 'children' array) for one menu $location (e.g. 'header'/'footer'), as configured under Admin -> Menus. */
+    /** Returns the nested menu-item tree (parents with a 'children' array) for one menu $location (e.g. 'header'/'footer'), as configured under Admin -> Menus - labels are overlaid with the visitor's current language (v3.10), falling back to the default-language label where untranslated. */
     function getMenuTree(string $location): array
     {
-        return Registry::container()->make(MenuTreeService::class)->tree($location);
+        return Registry::container()->make(MenuTreeService::class)->translatedTree($location);
     }
 }
 

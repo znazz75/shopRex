@@ -18,6 +18,8 @@
  * @var array $transactions           The raw payment/refund ledger rows (one row per money-moving event), for the "Transaction Ledger" table at the bottom.
  * @var array $paymentMethodBreakdown Revenue/order-count grouped by payment method ('payment_method', 'cnt', 'revenue'), for the "Revenue by Payment Method" table.
  * @var array $reportYears            Every year with at least one paid, non-test order (newest first), for the Annual Report card's year picker.
+ * @var array $overdueUnpaidOrders    v3.10 - orders past the payment-reminder days threshold, still unpaid, bank_transfer/invoice only (id, order_number, created_at, total, payment_method, payment_reminder_sent_at, customer_email) - visibility only, the actual "send" action lives on each order's own detail page.
+ * @var int   $reminderDays           The configured payment-reminder days threshold (Admin -> Settings -> Payment Reminders), shown in this card's heading/hint.
  */
 ?>
 <div class="page-header"><h1><?= e(__('admin.finance')) ?></h1></div>
@@ -34,6 +36,27 @@
   <div class="stat-card"><div class="label"><?= e(__('admin.finance.pending_payments')) ?></div><div class="value"><?= formatPrice($pendingPayments) ?></div></div>
   <div class="stat-card"><div class="label"><?= e(__('admin.finance.total_refunded')) ?></div><div class="value"><?= formatPrice($totalRefunded) ?></div></div>
   <div class="stat-card"><div class="label"><?= e(__('admin.finance.avg_order_value')) ?></div><div class="value"><?= formatPrice($avgOrderValue) ?></div></div>
+</div>
+
+<?php /* v3.10 - Services\PaymentReminderService. Visibility only - no send button here, the one "send a reminder" action lives on each order's own detail page (Controllers\Admin\OrderAdminController::sendPaymentReminderNow()), so there's exactly one code path that can trigger it. */ ?>
+<div class="card">
+  <h2 style="margin-top:0;"><?= e(__('admin.finance.overdue_orders.heading', ['days' => $reminderDays])) ?></h2>
+  <p style="color:var(--color-muted);font-size:13px;"><?= e(__('admin.finance.overdue_orders.hint')) ?></p>
+  <table class="data-table">
+    <thead><tr><th><?= e(__('admin.finance.order')) ?></th><th><?= e(__('common.date')) ?></th><th><?= e(__('admin.order_view.method')) ?></th><th><?= e(__('admin.order_view.amount')) ?></th><th><?= e(__('admin.orders.payment_reminder.submit')) ?></th></tr></thead>
+    <tbody>
+    <?php foreach ($overdueUnpaidOrders as $o): ?>
+      <tr>
+        <td><a href="<?= rtrim(SITE_URL, '/') ?>/admin/orders/<?= (int)$o['id'] ?>"><?= e($o['order_number']) ?></a></td>
+        <td><?= e(formatLocalDate($o['created_at'])) ?></td>
+        <td><?= e(ucwords(str_replace('_', ' ', $o['payment_method']))) ?></td>
+        <td><?= formatPrice((float)$o['total']) ?></td>
+        <td><?= !empty($o['payment_reminder_sent_at']) ? e(formatLocalDate($o['payment_reminder_sent_at'])) : '-' ?></td>
+      </tr>
+    <?php endforeach; ?>
+    <?php if (empty($overdueUnpaidOrders)): ?><tr><td colspan="5"><?= e(__('admin.finance.overdue_orders.none')) ?></td></tr><?php endif; ?>
+    </tbody>
+  </table>
 </div>
 
 <div class="card">

@@ -50,6 +50,7 @@ $navItems = [
     '/admin/withdrawals'      => ['label' => __('admin.withdrawals'), 'capability' => 'withdrawals'],
     '/admin/rma-tickets'      => ['label' => __('admin.rma_tickets'), 'capability' => 'rma_tickets'],
     '/admin/legal-documents'  => ['label' => __('admin.legal_documents'), 'capability' => 'legal_documents'],
+    '/admin/audit-log'        => ['label' => __('admin.audit_log'), 'capability' => 'audit_log'],
 ];
 // Highlights the *closest-matching* nav entry rather than an exact string
 // match, since most sections have detail/edit routes one or more segments
@@ -92,6 +93,7 @@ $availableLangs = getEnabledLanguages();
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?= isset($pageTitle) ? e($pageTitle) . ' - ' : '' ?>Admin - <?= e(SITE_NAME) ?></title>
+  <?php if ($favicon = faviconUrl()): ?><link rel="icon" href="<?= e($favicon) ?>"><?php endif; ?>
   <link rel="stylesheet" href="<?= rtrim(SITE_URL, '/') ?>/admin/assets/css/admin.css">
 </head>
 <body>

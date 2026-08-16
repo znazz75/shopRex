@@ -69,6 +69,12 @@ final class AdminAuth
         'rma_tickets'      => ['super_admin'],
         'contact_messages' => ['super_admin'],
         'legal_documents'  => ['super_admin'],
+        // v3.10 - Services\AuditLogService's log of every admin action.
+        // Super Admin only, per the same "who watches the watchers"
+        // reasoning as 'admins' just above - a manager shouldn't be able
+        // to see (or infer anything about) every action every admin has
+        // taken, including other managers'.
+        'audit_log'        => ['super_admin'],
     ];
 
     /** Memoized result of the currently-logged-in admin's DB row lookup (see $lookedUp) - null both before the lookup has run and when there simply is no logged-in admin. */

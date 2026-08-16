@@ -52,6 +52,22 @@ $base = rtrim(SITE_URL, '/') . '/admin/settings';
   </form>
 </div>
 
+<?php /* v3.10 - Branding (favicon). Its own standalone multipart form/POST target for the same reason "Site URL" above is standalone: a file input can't join the big #settingsForm below, which isn't multipart. */ ?>
+<div class="card">
+  <h2 style="margin-top:0;"><?= e(__('admin.settings.branding_heading')) ?></h2>
+  <p style="color:var(--color-muted);font-size:13px;"><?= e(__('admin.settings.favicon_hint')) ?></p>
+  <form method="post" action="<?= e($base) ?>/favicon" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <?= csrfField() ?>
+    <?php if ($favicon = faviconUrl()): ?>
+      <img src="<?= e($favicon) ?>" alt="" style="width:32px;height:32px;object-fit:contain;border:1px solid var(--color-border);border-radius:4px;padding:2px;">
+    <?php endif; ?>
+    <div class="form-group" style="margin-bottom:0;">
+      <input type="file" name="favicon" accept=".ico,.png">
+    </div>
+    <button class="btn btn-sm" type="submit"><?= e(__('admin.settings.favicon_upload')) ?></button>
+  </form>
+</div>
+
 <?php /* Everything below, down to the closing </form> near the bottom, is ONE form that saves every setting card together in a single POST. */ ?>
 <form method="post" action="<?= e($base) ?>" id="settingsForm">
   <?= csrfField() ?>
@@ -223,6 +239,23 @@ $base = rtrim(SITE_URL, '/') . '/admin/settings';
     <div class="form-group" style="max-width:280px;">
       <label for="gdpr_inactivity_months"><?= e(__('admin.settings.gdpr_months_label')) ?></label>
       <input type="number" id="gdpr_inactivity_months" name="gdpr_inactivity_months" min="4" value="<?= e($current['gdpr_inactivity_months'] ?? '24') ?>">
+    </div>
+  </div>
+
+  <?php /* v3.10 - Services\PaymentReminderService. The days threshold + on/off toggle are saved as part of this same big #settingsForm (unlike Site URL/Favicon above, this has no side effect beyond a plain key/value write); the actual per-order "send now" action lives on the order detail page instead, always available regardless of this toggle. */ ?>
+  <div class="card">
+    <h2 style="margin-top:0;"><?= e(__('admin.settings.payment_reminders_heading')) ?></h2>
+    <p style="color:var(--color-muted);font-size:13px;">
+      <?= e(__('admin.settings.payment_reminders_hint')) ?>
+    </p>
+    <div class="form-grid">
+      <div class="form-group" style="max-width:280px;">
+        <label for="payment_reminder_days"><?= e(__('admin.settings.payment_reminder_days_label')) ?></label>
+        <input type="number" id="payment_reminder_days" name="payment_reminder_days" min="1" value="<?= e($current['payment_reminder_days'] ?? '7') ?>">
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" name="payment_reminder_auto_send" value="1" style="width:auto;" <?= ($current['payment_reminder_auto_send'] ?? '0') === '1' ? 'checked' : '' ?>> <?= e(__('admin.settings.payment_reminder_auto_send_label')) ?></label>
+      </div>
     </div>
   </div>
 

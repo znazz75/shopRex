@@ -570,6 +570,26 @@ Composer-Paket wie `dompdf/dompdf` einsetzen.
   `admin/cron/.htaccess` als zweite Ebene. Admins können den Lauf auch bei
   Bedarf über **Admin → Einstellungen → Bereinigung jetzt ausführen**
   anstoßen. Testkonten (`is_test_account`) sind davon nie betroffen.
+- **Automatisierte Zahlungserinnerungen**: **Admin → Einstellungen →
+  Zahlungserinnerungen** legt fest, nach wie vielen Tagen eine unbezahlte
+  Bestellung für eine Erinnerungs-E-Mail infrage kommt, sowie einen
+  Schalter, ob diese automatisch oder nur manuell versendet wird. Gilt nur
+  für Vorkasse-/Rechnungsbestellungen (PayPal-/Kartenbestellungen werden
+  über einen Gateway-Callback abgewickelt).
+  `Services\PaymentReminderService::runAutomaticReminders()` ist die
+  automatische Seite (`admin/cron/payment_reminders.php` ist der
+  CLI-Einstiegspunkt - unbedenklich täglich auszuführen, unabhängig vom
+  Schalter, da der Service selbst nichts tut, wenn er deaktiviert ist):
+  ```bash
+  0 4 * * * php /path/to/shopRex/admin/cron/payment_reminders.php
+  ```
+  Gleiche HTTP-gesperrte/Nur-CLI-Absicherung wie das GDPR-Bereinigungsskript
+  oben. Ein Manager oder Admin kann jederzeit auch manuell über den
+  Button **Zahlungserinnerung senden** auf der jeweiligen Bestellseite eine
+  Erinnerung versenden, unabhängig vom Automatik-Schalter - pro Bestellung
+  wird so oder so eine Erinnerung versendet (ein zweiter manueller Versand
+  ist weiterhin jederzeit möglich). Testbestellungen (`is_test_order`) sind
+  davon nie betroffen.
 
 ## Externe Bibliotheken
 
@@ -629,6 +649,7 @@ src/Support/            Präsentations-Hilfsklassen (Pagination, Menübaum-Rende
 assets/                Shop-CSS/JS/Bilder
 admin/assets/           Admin-CSS/JS
 admin/cron/gdpr_cleanup.php  Nur-CLI-Einstiegspunkt für die Inaktivitätsbereinigung (siehe Datenschutz)
+admin/cron/payment_reminders.php  Nur-CLI-Einstiegspunkt für automatische Zahlungserinnerungen (siehe oben)
 themes/                 Installierbare Layout-Pakete (siehe Frontend-Theme oben) - themes/default/,
                        themes/sidebar/ und alle, die Sie hinzufügen; jedes ist eine theme.json +
                        style.css (die PHP-Vorlagen selbst liegen unter src/Views/storefront/theme/<key>/)

@@ -89,7 +89,7 @@ if (!defined('DB_PASS')) define('DB_PASS', getenv('SHOPREX_DB_PASS') ?: '');
 // "Versioning" section for the project's release/bump convention. Kept as
 // a literal string (not computed from the file) so it's available even in
 // contexts that would rather not touch the filesystem on every request.
-define('SHOPREX_VERSION', '3.09');
+define('SHOPREX_VERSION', '3.10');
 define('SITE_NAME', 'shopRex');
 if (!defined('SITE_URL')) define('SITE_URL', getenv('SHOPREX_SITE_URL') ?: detectSiteUrl());
 if (!defined('ADMIN_EMAIL')) define('ADMIN_EMAIL', getenv('SHOPREX_ADMIN_EMAIL') ?: 'admin@example.com');
@@ -113,6 +113,11 @@ define('UPLOAD_URL', SITE_URL . '/uploads/products/');
 // through invoice_download.php, which checks the requester is the
 // order's owner or an admin.
 define('INVOICE_DIR', __DIR__ . '/../uploads/invoices/');
+// v3.10 - site favicon (Admin -> Settings -> Branding). Served directly
+// like product images (not gated like invoices), so it only needs the
+// execute-block uploads/.htaccess already applies to every subdirectory.
+define('BRANDING_UPLOAD_DIR', __DIR__ . '/../uploads/branding/');
+define('BRANDING_UPLOAD_URL', SITE_URL . '/uploads/branding/');
 
 // ---------------------------------------------------------------
 // Email (used by Services\Mailer)

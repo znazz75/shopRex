@@ -75,7 +75,7 @@ return function (bool $isAdmin = false): Container {
     $container->singleton(\ShopRex\Services\NumberSequenceService::class, fn (Container $c) => new \ShopRex\Services\NumberSequenceService($c->make(\PDO::class)));
 
     $container->singleton(CategoryTreeService::class, fn (Container $c) => new CategoryTreeService($c->make(\PDO::class), $c->make(SettingsRepository::class)));
-    $container->singleton(MenuTreeService::class, fn (Container $c) => new MenuTreeService($c->make(\PDO::class), $c->make(CategoryTreeService::class)));
+    $container->singleton(MenuTreeService::class, fn (Container $c) => new MenuTreeService($c->make(\PDO::class), $c->make(CategoryTreeService::class), $c->make(SettingsRepository::class)));
     $container->singleton(DiscountCalculator::class, fn () => new DiscountCalculator());
     $container->singleton(TaxCalculator::class, fn (Container $c) => new TaxCalculator($c->make(\PDO::class), $c->make(SettingsRepository::class), $c->make(DiscountCalculator::class)));
     $container->singleton(TranslationOverlay::class, fn (Container $c) => new TranslationOverlay($c->make(\PDO::class), $c->make(SettingsRepository::class)));
@@ -120,6 +120,8 @@ return function (bool $isAdmin = false): Container {
     // see Services\RateLimiter's docblock.
     $container->singleton('RateLimiter.contact', fn (Container $c) => new \ShopRex\Services\RateLimiter($c->make(\PDO::class), 'contact_message_attempts'));
     $container->singleton(\ShopRex\Services\GdprService::class, fn (Container $c) => new \ShopRex\Services\GdprService($c->make(\PDO::class), $c->make(SettingsRepository::class)));
+    $container->singleton(\ShopRex\Services\PaymentReminderService::class, fn (Container $c) => new \ShopRex\Services\PaymentReminderService($c->make(\PDO::class), $c->make(SettingsRepository::class)));
+    $container->singleton(\ShopRex\Services\AuditLogService::class, fn (Container $c) => new \ShopRex\Services\AuditLogService($c->make(\PDO::class)));
     $container->singleton(\ShopRex\Services\PdfDocumentGenerator::class, fn () => new \ShopRex\Services\PdfDocumentGenerator());
     $container->singleton(\ShopRex\Services\AnnualReportGenerator::class, fn () => new \ShopRex\Services\AnnualReportGenerator());
 

@@ -17,6 +17,7 @@
 
 use ShopRex\Controllers\Admin\AdminAuthController;
 use ShopRex\Controllers\Admin\AdminUserAdminController;
+use ShopRex\Controllers\Admin\AuditLogAdminController;
 use ShopRex\Controllers\Admin\CategoryAdminController;
 use ShopRex\Controllers\Admin\ContactAdminController;
 use ShopRex\Controllers\Admin\CustomerAdminController;
@@ -82,6 +83,7 @@ return function (Router $router, Container $container): void {
 
     $router->get('/admin/finance', [FinanceAdminController::class, 'index'])->capability('finance');
     $router->get('/admin/finance/annual-report', [FinanceAdminController::class, 'annualReport'])->capability('finance');
+    $router->get('/admin/audit-log', [AuditLogAdminController::class, 'index'])->capability('audit_log');
 
     $router->get('/admin/orders', [OrderAdminController::class, 'index'])->capability('orders');
     // /create must be registered before the {id} routes below - routes
@@ -95,6 +97,7 @@ return function (Router $router, Container $container): void {
     $router->post('/admin/orders/{id}', [OrderAdminController::class, 'save'])->capability('orders');
     $router->post('/admin/orders/{id}/items', [OrderAdminController::class, 'saveItems'])->capability('orders');
     $router->post('/admin/orders/{id}/resend-invoice', [OrderAdminController::class, 'resendInvoice'])->capability('orders');
+    $router->post('/admin/orders/{id}/send-payment-reminder', [OrderAdminController::class, 'sendPaymentReminderNow'])->capability('orders');
     // The one route in this whole feature NOT gated by the plain 'orders'
     // capability - cancelling (this project's "delete an order") is Super
     // Admin only, see AdminAuth::CAPABILITIES.
@@ -136,6 +139,7 @@ return function (Router $router, Container $container): void {
     $router->get('/admin/settings', [SettingsAdminController::class, 'index'])->capability('settings');
     $router->post('/admin/settings', [SettingsAdminController::class, 'save'])->capability('settings');
     $router->post('/admin/settings/site-url', [SettingsAdminController::class, 'saveSiteUrl'])->capability('settings');
+    $router->post('/admin/settings/favicon', [SettingsAdminController::class, 'saveFavicon'])->capability('settings');
     $router->post('/admin/settings/gdpr-cleanup', [SettingsAdminController::class, 'runGdprCleanup'])->capability('settings');
 
     $router->get('/admin/email-templates', [EmailTemplateAdminController::class, 'index'])->capability('settings');
