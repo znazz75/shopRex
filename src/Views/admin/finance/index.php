@@ -17,6 +17,7 @@
  * @var array $monthly                Revenue/order-count grouped by calendar month ('ym', 'orders', 'revenue'), for the "Revenue by Month" table.
  * @var array $transactions           The raw payment/refund ledger rows (one row per money-moving event), for the "Transaction Ledger" table at the bottom.
  * @var array $paymentMethodBreakdown Revenue/order-count grouped by payment method ('payment_method', 'cnt', 'revenue'), for the "Revenue by Payment Method" table.
+ * @var array $reportYears            Every year with at least one paid, non-test order (newest first), for the Annual Report card's year picker.
  */
 ?>
 <div class="page-header"><h1><?= e(__('admin.finance')) ?></h1></div>
@@ -33,6 +34,26 @@
   <div class="stat-card"><div class="label"><?= e(__('admin.finance.pending_payments')) ?></div><div class="value"><?= formatPrice($pendingPayments) ?></div></div>
   <div class="stat-card"><div class="label"><?= e(__('admin.finance.total_refunded')) ?></div><div class="value"><?= formatPrice($totalRefunded) ?></div></div>
   <div class="stat-card"><div class="label"><?= e(__('admin.finance.avg_order_value')) ?></div><div class="value"><?= formatPrice($avgOrderValue) ?></div></div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;"><?= e(__('admin.finance.annual_report.heading')) ?></h2>
+  <p style="color:var(--color-muted);font-size:13px;"><?= e(__('admin.finance.annual_report.hint')) ?></p>
+  <?php if (empty($reportYears)): ?>
+    <p style="color:var(--color-muted);"><?= e(__('admin.finance.annual_report.no_years')) ?></p>
+  <?php else: ?>
+    <form method="get" action="<?= rtrim(SITE_URL, '/') ?>/admin/finance/annual-report" target="_blank" style="display:flex;gap:10px;align-items:flex-end;">
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="report_year"><?= e(__('admin.finance.annual_report.year')) ?></label>
+        <select id="report_year" name="year">
+          <?php foreach ($reportYears as $y): ?>
+            <option value="<?= (int)$y ?>"><?= (int)$y ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <button class="btn btn-sm" type="submit"><?= e(__('admin.finance.annual_report.submit')) ?></button>
+    </form>
+  <?php endif; ?>
 </div>
 
 <div class="card">

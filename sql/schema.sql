@@ -756,6 +756,11 @@ INSERT INTO email_templates (template_key, language, subject, body_html) VALUES
     ('order_confirmation', 'de', 'Ihre {{shop_name}} Bestellung {{order_number}} ist eingegangen',
      '<h2 style="margin-top:0;">Vielen Dank für Ihre Bestellung, {{customer_name}}!</h2><p>Wir haben Ihre Bestellung <strong>{{order_number}}</strong> erhalten und werden sie in Kürze bearbeiten. Sobald sie versendet wird, erhalten Sie eine weitere E-Mail.</p>{{order_items_table}}{{bank_transfer_details}}'),
 
+    ('invoice_resend', 'en', 'Your invoice for {{shop_name}} order {{order_number}}',
+     '<h2 style="margin-top:0;">Here is your invoice, {{customer_name}}</h2><p>As requested, please find attached invoice <strong>{{invoice_number}}</strong> for order <strong>{{order_number}}</strong>.</p>'),
+    ('invoice_resend', 'de', 'Ihre Rechnung zu {{shop_name}} Bestellung {{order_number}}',
+     '<h2 style="margin-top:0;">Hier ist Ihre Rechnung, {{customer_name}}</h2><p>Wie gewünscht finden Sie anbei die Rechnung <strong>{{invoice_number}}</strong> zu Ihrer Bestellung <strong>{{order_number}}</strong>.</p>'),
+
     ('order_status_update', 'en', 'Update on your {{shop_name}} order {{order_number}}',
      '<h2 style="margin-top:0;">Your order status has changed</h2><p>Order <strong>{{order_number}}</strong> is now:</p><p style="font-size:18px;font-weight:bold;text-transform:uppercase;color:#1f2937;">{{status}}</p>{{admin_notes}}'),
     ('order_status_update', 'de', 'Update zu Ihrer {{shop_name}} Bestellung {{order_number}}',

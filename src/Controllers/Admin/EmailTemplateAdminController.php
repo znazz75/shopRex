@@ -38,6 +38,7 @@ final class EmailTemplateAdminController extends AdminCrudController
             '_header'                  => ['label' => __('admin.email_templates.key_header'), 'tokens' => ['shop_name'], 'has_subject' => false],
             '_footer'                  => ['label' => __('admin.email_templates.key_footer'), 'tokens' => ['shop_name'], 'has_subject' => false],
             'order_confirmation'       => ['label' => __('admin.email_templates.key_order_confirmation'), 'tokens' => ['shop_name', 'customer_name', 'order_number', 'order_items_table', 'bank_transfer_details'], 'has_subject' => true],
+            'invoice_resend'           => ['label' => __('admin.email_templates.key_invoice_resend'), 'tokens' => ['shop_name', 'customer_name', 'order_number', 'invoice_number'], 'has_subject' => true],
             'order_status_update'      => ['label' => __('admin.email_templates.key_order_status_update'), 'tokens' => ['shop_name', 'order_number', 'status', 'admin_notes'], 'has_subject' => true],
             'registration_welcome'     => ['label' => __('admin.email_templates.key_registration_welcome'), 'tokens' => ['shop_name', 'customer_name', 'account_url'], 'has_subject' => true],
             'password_reset'           => ['label' => __('admin.email_templates.key_password_reset'), 'tokens' => ['shop_name', 'customer_name', 'reset_link'], 'has_subject' => true],

@@ -121,6 +121,7 @@ return function (bool $isAdmin = false): Container {
     $container->singleton('RateLimiter.contact', fn (Container $c) => new \ShopRex\Services\RateLimiter($c->make(\PDO::class), 'contact_message_attempts'));
     $container->singleton(\ShopRex\Services\GdprService::class, fn (Container $c) => new \ShopRex\Services\GdprService($c->make(\PDO::class), $c->make(SettingsRepository::class)));
     $container->singleton(\ShopRex\Services\PdfDocumentGenerator::class, fn () => new \ShopRex\Services\PdfDocumentGenerator());
+    $container->singleton(\ShopRex\Services\AnnualReportGenerator::class, fn () => new \ShopRex\Services\AnnualReportGenerator());
 
     $projectRoot = dirname(__DIR__);
 

@@ -21,6 +21,11 @@
   <?php /* Reuses the storefront's own invoice-download route (/order/{number}/invoice, the same one a customer uses) rather than a separate admin-only PDF endpoint - see Services\InvoiceService. Only shown once an invoice actually exists for this order. */ ?>
   <?php if ($invoice): ?>
     <a class="btn btn-secondary" href="<?= rtrim(SITE_URL, '/') ?>/order/<?= urlencode($order['order_number']) ?>/invoice" target="_blank"><?= e(__('admin.order_view.download_invoice', ['number' => $invoice['invoice_number']])) ?></a>
+    <?php /* Re-sends the same PDF already shown by the download link above, as an email attachment - Services\Mailer::sendInvoiceEmail(). A plain POST form styled as a button, not a link, since it's a state-changing action (sends an email, writes to email_log). */ ?>
+    <form method="post" action="<?= rtrim(SITE_URL, '/') ?>/admin/orders/<?= (int)$order['id'] ?>/resend-invoice" style="display:inline;">
+      <?= csrfField() ?>
+      <button class="btn btn-secondary" type="submit"><?= e(__('admin.orders.resend.submit')) ?></button>
+    </form>
   <?php endif; ?>
 </div>
 

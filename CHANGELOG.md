@@ -8,6 +8,31 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [3.07] - 2026-08-16
+
+New features: resend invoice by email, printable annual report of paid
+orders, and VAT ID (+ company legal name/registration number) on invoices.
+
+### Added
+- **Admin -> Orders -> [order] -> "Resend Invoice Email"**: re-sends the
+  order's already-generated invoice PDF to the customer
+  (`Services\Mailer::sendInvoiceEmail()`, new `invoice_resend` email
+  template, editable in Admin -> Email Templates). Only shown/reachable
+  when the order actually has an invoice yet - printing/downloading the
+  invoice was already possible via the existing "Download Invoice" link
+  (it opens the PDF inline, printable from any browser/PDF viewer - no
+  new code needed for that part).
+- **Admin -> Finance -> Annual Report**: a generated PDF
+  (`Services\AnnualReportGenerator`, same hand-built `SimplePdf` approach
+  `InvoiceGenerator`/`PdfDocumentGenerator` already use) listing every
+  paid, non-test order in a chosen year with a grand-total row - a year
+  picker on the Finance page downloads/opens it inline for printing.
+- **VAT ID on invoices**: `Services\InvoiceGenerator` now prints the
+  Company/Legal settings (`company_legal_name`/`vat_id`/
+  `company_registration_number` - already configurable in Admin ->
+  Settings, but never actually shown anywhere until now) under the shop
+  name, whenever at least one is filled in.
+
 ## [3.06] - 2026-08-16
 
 New feature: admin order create/edit/cancel, for managers and Super Admin.

@@ -5,6 +5,7 @@ namespace ShopRex\Controllers\Admin;
 use ShopRex\Core\Container;
 use ShopRex\Core\Request;
 use ShopRex\Core\Response;
+use ShopRex\Services\AnnualReportGenerator;
 
 /**
  * Direct port of admin/finance.php - read-only reporting page, no forms.
@@ -19,11 +20,13 @@ final class FinanceAdminController extends AdminCrudController
 {
     /** Raw database handle for this controller's read-only aggregate queries against `orders`/`transactions`. */
     private readonly \PDO $pdo;
+    private readonly AnnualReportGenerator $annualReportGenerator;
 
     public function __construct(Request $request, Container $container)
     {
         parent::__construct($request, $container);
         $this->pdo = $container->make(\PDO::class);
+        $this->annualReportGenerator = $container->make(AnnualReportGenerator::class);
     }
 
     /** GET /admin/finance - computes every figure/table on the finance dashboard in one request; every query below excludes `is_test_account`/`is_test_order` data (see CLAUDE.md's "Test accounts" section) so demo/test orders never inflate real revenue figures. */
@@ -71,9 +74,55 @@ final class FinanceAdminController extends AdminCrudController
              FROM orders WHERE payment_status = 'paid' AND is_test_order = 0 GROUP BY payment_method"
         )->fetchAll();
 
+        // Every year that has at least one paid, non-test order - populates
+        // the Annual Report card's year picker. Newest first.
+        $reportYears = array_column(
+            $this->pdo->query(
+                "SELECT DISTINCT YEAR(created_at) AS y FROM orders WHERE payment_status = 'paid' AND is_test_order = 0 ORDER BY y DESC"
+            )->fetchAll(),
+            'y'
+        );
+
         return $this->render('finance/index', compact(
             'totalRevenue', 'totalRefunded', 'pendingPayments', 'avgOrderValue', 'testOrderCount',
-            'monthly', 'transactions', 'paymentMethodBreakdown'
+            'monthly', 'transactions', 'paymentMethodBreakdown', 'reportYears'
         ) + ['pageTitle' => __('admin.finance')]);
+    }
+
+    /**
+     * GET /admin/finance/annual-report?year=YYYY - streams a generated PDF
+     * (Services\AnnualReportGenerator) listing every paid, non-test order
+     * in that year, inline (same Content-Disposition pattern
+     * Controllers\Storefront\OrderController::downloadInvoice() already
+     * uses) so it opens straight in the browser, printable immediately.
+     */
+    public function annualReport(Request $request): Response
+    {
+        $year = (int)$request->get('year', date('Y'));
+        // A sane range check, not a real validation need (the query below
+        // is fully parameterized) - just avoids generating a technically-valid
+        // but meaningless report for e.g. year 0 or year 99999 from a
+        // tampered/typo'd query string.
+        if ($year < 2000 || $year > (int)date('Y') + 1) {
+            $year = (int)date('Y');
+        }
+
+        $orders = $this->pdo->prepare(
+            "SELECT o.order_number, o.created_at, COALESCE(c.email, o.guest_email) AS customer_email,
+                    o.subtotal, o.shipping_cost, o.tax_total, o.total
+             FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+             WHERE o.payment_status = 'paid' AND o.is_test_order = 0 AND YEAR(o.created_at) = ?
+             ORDER BY o.created_at ASC"
+        );
+        $orders->execute([$year]);
+        $orders = $orders->fetchAll();
+
+        $pdfBytes = $this->annualReportGenerator->generate($year, $orders);
+
+        return Response::html($pdfBytes)
+            ->withHeader('Content-Type', 'application/pdf')
+            ->withHeader('Content-Disposition', 'inline; filename="annual-report-' . $year . '.pdf"')
+            ->withHeader('Content-Length', (string)strlen($pdfBytes))
+            ->withHeader('X-Content-Type-Options', 'nosniff');
     }
 }

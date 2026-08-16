@@ -303,6 +303,26 @@ right one; `NULL` on pre-existing orders, which degrades to the plain
 product stock pool). Order numbers are untouched by any of this — see the
 Sequential numbering paragraph above for why they stay out of scope.
 
+**Invoice resend / annual report / VAT ID** (v3.07): `Services\Mailer::sendInvoiceEmail()`
+re-sends an order's already-generated invoice PDF (new `invoice_resend`
+email template) — deliberately avoids `renderOrderItemsTable()`/any other
+`__()`-based helper, since `__()` reads `Services\I18n::current()` (the
+*admin's own* browsing language on an admin-triggered request), not the
+order's language; every token value passed into `Mailer::render()` here is
+a plain already-known string instead, so only `render()`'s own explicit
+`$language` argument decides the wording. `Services\AnnualReportGenerator`
+(same hand-built `SimplePdf` approach as `InvoiceGenerator`/
+`PdfDocumentGenerator`, no new dependency) builds a PDF of every paid,
+non-test order in one year for `FinanceAdminController::annualReport()` —
+unlike an invoice, it's never saved to disk/a DB row, just regenerated
+fresh per request, and unlike invoice/email text it's fine to use `__()`
+directly since it's always generated live inside an admin's own request.
+`InvoiceGenerator` finally prints the Company/Legal settings
+(`company_legal_name`/`vat_id`/`company_registration_number` — configurable
+since v2.00 but never displayed anywhere until now) under the shop name,
+skipping the block entirely when all three are blank rather than printing
+empty lines.
+
 **New legal/compliance domain** (v2.00): `Models\CustomerRequest`
 (abstract) is the shared base for `WithdrawalRequest` (order-level, fixed
 window from `Models\WithdrawalRequest::calculateDeadline()`, hygiene

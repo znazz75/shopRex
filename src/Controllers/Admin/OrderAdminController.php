@@ -267,6 +267,43 @@ final class OrderAdminController extends AdminCrudController
     }
 
     /**
+     * POST /admin/orders/{id}/resend-invoice - re-sends the order's
+     * already-generated invoice PDF to the customer (Services\Mailer::sendInvoiceEmail()).
+     * Available to managers too (->capability('orders'), same as
+     * create/edit) - unlike cancel, sending an email has no financial or
+     * stock effect. Only ever shown/reachable when the order actually has
+     * an invoice yet (same guard the "Download Invoice" link already uses).
+     */
+    public function resendInvoice(Request $request): Response
+    {
+        if ($csrfFailure = $this->requireCsrf()) {
+            return $csrfFailure;
+        }
+        $id = (int)$request->routeParam('id', 0);
+        $order = $this->fetchOrder($id);
+        if (!$order) {
+            $this->flash('error', __('admin.order_view.not_found'));
+            return $this->redirect('/admin/orders');
+        }
+
+        $invStmt = $this->pdo->prepare('SELECT * FROM invoices WHERE order_id = ? LIMIT 1');
+        $invStmt->execute([$id]);
+        $invoice = $invStmt->fetch();
+        if (!$invoice || !is_file($invoice['pdf_path'])) {
+            $this->flash('error', __('admin.orders.resend.no_invoice'));
+            return $this->redirect('/admin/orders/' . $id);
+        }
+
+        if (Mailer::sendInvoiceEmail($order, $invoice)) {
+            $this->flash('success', __('admin.orders.resend.flash_sent', ['email' => $order['customer_email']]));
+        } else {
+            $this->flash('error', __('admin.orders.resend.flash_failed'));
+        }
+
+        return $this->redirect('/admin/orders/' . $id);
+    }
+
+    /**
      * POST /admin/orders/{id}/cancel - "delete" an order (never a real SQL
      * DELETE - see Services\OrderEditingService::cancelAndRestock()'s
      * docblock and sql/schema.sql's order_edit_log comment). Gated

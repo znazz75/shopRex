@@ -34,6 +34,7 @@ final class InvoiceGenerator
             'subtotal' => 'Subtotal', 'shipping' => 'Shipping', 'grand_total' => 'Total',
             'vat_on' => 'VAT', 'test_notice' => 'TEST ORDER - NO REAL PAYMENT WAS PROCESSED',
             'thank_you' => 'Thank you for your order!',
+            'vat_id' => 'VAT ID', 'company_reg' => 'Company registration no.',
         ],
         'de' => [
             'invoice' => 'Rechnung', 'date' => 'Datum', 'order_number' => 'Bestellnummer',
@@ -42,6 +43,7 @@ final class InvoiceGenerator
             'subtotal' => 'Zwischensumme', 'shipping' => 'Versand', 'grand_total' => 'Gesamtsumme',
             'vat_on' => 'MwSt.', 'test_notice' => 'TESTBESTELLUNG - ES WURDE KEINE ECHTE ZAHLUNG VERARBEITET',
             'thank_you' => 'Vielen Dank für Ihre Bestellung!',
+            'vat_id' => 'USt-IdNr.', 'company_reg' => 'Handelsregisternummer',
         ],
         // Accented characters here (é, è, à, ç, ...) are all within
         // WinAnsiEncoding/Latin-1, same as German's umlauts - SimplePdf
@@ -60,6 +62,7 @@ final class InvoiceGenerator
             // label here, which is normal mixed-case text and keeps its
             // accents, e.g. 'Numéro de commande' below).
             'thank_you' => 'Merci pour votre commande !',
+            'vat_id' => 'N° TVA', 'company_reg' => 'N° RCS',
         ],
     ];
 
@@ -105,6 +108,32 @@ final class InvoiceGenerator
         $shopName = getSetting('shop_name', SITE_NAME);
         $pdf->text($margin, $y, $shopName, 18, true);
         $y -= 10;
+
+        // Company/legal footer (Admin -> Settings -> Company / Legal) -
+        // printed right under the shop name whenever at least one of the
+        // three fields is actually filled in, matching that settings
+        // screen's own hint text ("Printed on invoices when filled in").
+        // Skipped entirely (not just left blank) when none are set, so an
+        // invoice generated before these were configured doesn't gain
+        // empty lines retroactively.
+        $companyLegalName = trim((string)getSetting('company_legal_name', ''));
+        $vatId = trim((string)getSetting('vat_id', ''));
+        $companyRegNumber = trim((string)getSetting('company_registration_number', ''));
+        if ($companyLegalName !== '' || $vatId !== '' || $companyRegNumber !== '') {
+            $y -= 14;
+            if ($companyLegalName !== '') {
+                $pdf->text($margin, $y, $companyLegalName, 9, false, [0.35, 0.35, 0.35]);
+                $y -= 12;
+            }
+            if ($vatId !== '') {
+                $pdf->text($margin, $y, $t['vat_id'] . ': ' . $vatId, 9, false, [0.35, 0.35, 0.35]);
+                $y -= 12;
+            }
+            if ($companyRegNumber !== '') {
+                $pdf->text($margin, $y, $t['company_reg'] . ': ' . $companyRegNumber, 9, false, [0.35, 0.35, 0.35]);
+                $y -= 12;
+            }
+        }
 
         // Stamp a red "TEST ORDER" warning near the top of test-account
         // invoices, so nobody mistakes a demo/trial order's PDF for a real

@@ -285,6 +285,41 @@ final class Mailer
         return self::send($order['customer_email'], $rendered['subject'], $rendered['html'], 'order_confirmation', (int)$order['id'], $invoicePath, $invoiceName);
     }
 
+    /**
+     * Re-sends an order's already-generated invoice PDF to the customer -
+     * an explicit admin action (Admin -> Orders -> [order] -> "Resend
+     * Invoice Email"), distinct from the automatic copy
+     * sendOrderConfirmation() attaches right after checkout.
+     *
+     * Deliberately does NOT call renderOrderItemsTable() or any other
+     * __()-based helper - see that method's own docblock for why: __()
+     * reads Services\I18n::current(), which on an admin-triggered request
+     * is the ADMIN's own browsing language (session-based), not the
+     * order's language. Every value passed into render() below is a
+     * plain, already-known string (name/number), so this path never makes
+     * that mistake - only render()'s own $language parameter (which IS
+     * $order['language'], not the admin's) decides which template text is used.
+     */
+    public static function sendInvoiceEmail(array $order, array $invoice): bool
+    {
+        $lang = $order['language'] ?? 'en';
+        $rendered = self::render('invoice_resend', $lang, [
+            'customer_name'  => trim($order['shipping_name'] ?? ''),
+            'order_number'   => $order['order_number'],
+            'invoice_number' => $invoice['invoice_number'],
+        ]);
+
+        return self::send(
+            $order['customer_email'],
+            $rendered['subject'],
+            $rendered['html'],
+            'invoice_resend',
+            (int)$order['id'],
+            $invoice['pdf_path'],
+            $invoice['invoice_number'] . '.pdf'
+        );
+    }
+
     /** Notifies a customer that their order's status changed (e.g. "shipped") - includes any admin-written note verbatim, HTML-escaped with line breaks preserved. */
     public static function sendOrderStatusUpdate(array $order): bool
     {
