@@ -476,13 +476,25 @@ CREATE TABLE order_items (
     product_name VARCHAR(200) NOT NULL,
     option_summary VARCHAR(255) NULL,
     sku VARCHAR(64) NULL,
+    -- Which stock pool this line was actually tracked against at the time
+    -- it was sold - a specific product_variants combination, a legacy
+    -- comma-separated list of product_option_values ids, or neither (a
+    -- plain product with no options). Needed so Services\OrderStockService
+    -- can restock the right pool when an order is later cancelled or
+    -- edited (Services\OrderEditingService) - NULL on any order placed
+    -- before this column existed, which restock/edit degrades gracefully
+    -- for by falling back to the plain product stock pool (see
+    -- OrderEditingService's docblock).
+    product_variant_id INT UNSIGNED NULL,
+    option_value_ids VARCHAR(255) NULL,
     quantity INT NOT NULL DEFAULT 1,
     unit_price DECIMAL(10,2) NOT NULL,
     total_price DECIMAL(10,2) NOT NULL,
     tax_rate_percent DECIMAL(5,2) NOT NULL DEFAULT 0.00,
     tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
+    FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------
@@ -542,6 +554,27 @@ CREATE TABLE inventory_log (
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
     FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL,
     FOREIGN KEY (created_by) REFERENCES admin_users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Admin order create/edit/cancel audit trail (Services\OrderEditingService).
+-- The order row itself is never SQL-DELETEd (see Services\GdprService's
+-- accounting/tax-retention reasoning) - "delete" in the admin UI means
+-- cancel + restock, logged here like every other order edit. This table
+-- exists specifically because line-item edits are allowed on orders that
+-- are already paid/invoiced, which can retroactively change what Finance/
+-- Dashboard report - this is what keeps that honest: the live totals can
+-- change, but who changed them and why stays on the record.
+-- ------------------------------------------------------------
+CREATE TABLE order_edit_log (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    order_id INT UNSIGNED NOT NULL,
+    admin_id INT UNSIGNED NULL,
+    action ENUM('created','items_edited','cancelled') NOT NULL,
+    summary TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (admin_id) REFERENCES admin_users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------

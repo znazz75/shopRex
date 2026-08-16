@@ -92,11 +92,23 @@ return function (bool $isAdmin = false): Container {
     $container->singleton(PaymentSettings::class, fn (Container $c) => new PaymentSettings($c->make(SettingsRepository::class)));
     $container->singleton(PaymentGatewayFactory::class, fn (Container $c) => new PaymentGatewayFactory($c->make(PaymentSettings::class)));
 
+    $container->singleton(\ShopRex\Services\OrderStockService::class, fn () => new \ShopRex\Services\OrderStockService());
+
     $container->singleton(\ShopRex\Services\CheckoutService::class, fn (Container $c) => new \ShopRex\Services\CheckoutService(
         $c->make(\PDO::class),
         $c->make(Cart::class),
         $c->make(PaymentGatewayFactory::class),
         $c->make(SettingsRepository::class),
+        $c->make(\ShopRex\Services\NumberSequenceService::class),
+        $c->make(\ShopRex\Services\OrderStockService::class)
+    ));
+
+    // Admin order create/edit/cancel (Admin -> Orders) - see
+    // Services\OrderEditingService's docblock.
+    $container->singleton(\ShopRex\Services\OrderEditingService::class, fn (Container $c) => new \ShopRex\Services\OrderEditingService(
+        $c->make(\PDO::class),
+        $c->make(Cart::class),
+        $c->make(\ShopRex\Services\OrderStockService::class),
         $c->make(\ShopRex\Services\NumberSequenceService::class)
     ));
 

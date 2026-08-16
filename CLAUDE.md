@@ -272,6 +272,37 @@ invoice numbers are no longer purely deterministic from the order id: it
 checks for an already-issued number for that `order_id` first and only
 calls `next('invoice')` when there isn't one yet.
 
+**Admin order create/edit/cancel** (v3.06): `Services\OrderEditingService`
+lets a manager or Super Admin manually create an order, edit an existing
+order's line items, or cancel one — `orders` capability now includes
+`manager` (was Super Admin only); cancelling is gated by a separate
+`orders_delete` capability, Super Admin only. "Cancel" is this project's
+"delete an order" — **never a real SQL `DELETE`**, consistent with
+`Services\GdprService`'s accounting/tax-retention reasoning for why an
+order row is never removed: it sets `status = 'cancelled'` and restores
+stock. Every create/edit/cancel is logged to `order_edit_log` (who, when,
+what changed) and shown on the order detail page — this is what keeps
+line-item edits on an already-paid/invoiced order honest, since that's
+explicitly allowed here (a `transactions` `'adjustment'` ledger row keeps
+Finance's live totals internally consistent, and an already-generated
+invoice is regenerated in place via `InvoiceGenerator` — **same invoice
+number, not a compliant credit note**, a known/documented limitation, not
+a bug). Removing/reducing a line item that already has an RMA ticket or
+withdrawal request against it is blocked (`order_items.id` cascade-deletes
+from both those child tables — silently letting that happen would lose
+return/withdrawal history). `Models\Cart::priceLine()` (extracted from
+`getItems()`'s per-line logic) and `Services\OrderStockService` (extracted
+from `CheckoutService::placeOrder()`'s inline stock block) are the shared,
+single implementations of "price a line item" and "apply/reverse an
+order's stock impact" that checkout, admin order creation, and admin
+order editing/cancellation all now go through — not parallel copies of
+the same security/stock-accuracy-critical logic. `order_items` gained
+`product_variant_id`/`option_value_ids` columns (which stock pool a line
+was actually tracked against — needed so cancel/edit can restock the
+right one; `NULL` on pre-existing orders, which degrades to the plain
+product stock pool). Order numbers are untouched by any of this — see the
+Sequential numbering paragraph above for why they stay out of scope.
+
 **New legal/compliance domain** (v2.00): `Models\CustomerRequest`
 (abstract) is the shared base for `WithdrawalRequest` (order-level, fixed
 window from `Models\WithdrawalRequest::calculateDeadline()`, hygiene

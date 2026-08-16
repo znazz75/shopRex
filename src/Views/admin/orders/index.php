@@ -10,7 +10,10 @@
  * @var string $typeFilter   Which order "type" is currently filtered to: 'all', 'real' (excludes test orders), or 'test' (test orders only) - see CLAUDE.md's "Test accounts" section for what a test order is.
  */
 ?>
-<div class="page-header"><h1><?= e(__('admin.orders')) ?></h1></div>
+<div class="page-header">
+  <h1><?= e(__('admin.orders')) ?></h1>
+  <a class="btn" href="<?= rtrim(SITE_URL, '/') ?>/admin/orders/create"><?= e(__('admin.orders.create.title')) ?></a>
+</div>
 
 <?php /* Both dropdowns auto-submit the form on change (onchange="this.form.submit()") - there's no separate "Apply" button, picking a filter value immediately reloads the page with the new query string. */ ?>
 <form class="toolbar" method="get">

@@ -8,6 +8,54 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [3.06] - 2026-08-16
+
+New feature: admin order create/edit/cancel, for managers and Super Admin.
+
+### Added
+- **Admin -> Orders -> Create**: manually enter an order (e.g. a phone
+  order) - existing customer or guest, any number of line items, shipping
+  address/method, payment method/status. Price, tax, shipping, and stock
+  are all re-derived server-side exactly like the real storefront checkout
+  (`Models\Cart::priceLine()`, extracted from `Cart::getItems()` - now a
+  single shared implementation for both) - nothing here is trusted from
+  the submitted form directly.
+- **Admin -> Orders -> [order] -> Edit Line Items**: add/remove/change
+  the quantity of any item on an existing order. Allowed on any order
+  including already-paid/invoiced ones (a deliberate choice) - a
+  `transactions` ledger adjustment entry keeps Finance's reported totals
+  internally consistent, and an already-generated invoice PDF is
+  regenerated in place (same invoice number - not a compliant credit
+  note, documented as a known limitation both in the UI and in code).
+  Removing or reducing a line item that already has an RMA ticket or
+  withdrawal request against it is blocked, rather than silently
+  cascading that history away.
+- **Admin -> Orders -> [order] -> Cancel Order**: this project's "delete
+  an order" - never a real SQL `DELETE` (an order row stays forever, per
+  `Services\GdprService`'s accounting/tax-retention reasoning). Sets
+  status to `cancelled`, restores stock for every line, and reverses the
+  ledger if the order had been paid. Super Admin only - the one
+  irreversible action in this feature; managers can create/edit but not
+  cancel (`orders_delete` capability, separate from `orders`).
+- New `order_edit_log` table - every create/edit/cancel is recorded (who,
+  when, what changed) and shown as an order-history timeline on the order
+  detail page.
+- New `order_items.product_variant_id`/`option_value_ids` columns - which
+  stock pool a line was actually tracked against, needed so a later
+  cancel/edit can restock the right one (`Services\OrderStockService`,
+  extracted from `CheckoutService::placeOrder()`'s inline stock logic -
+  now one shared, oversell-safe implementation for checkout, admin order
+  creation, and admin order editing/cancellation alike). NULL on any
+  order placed before this column existed; restock for those degrades to
+  the plain product stock pool.
+- `orders` capability now includes `manager` (was Super Admin only,
+  meaning managers couldn't even view orders before this).
+- **Order numbers are unaffected** - still date+random, deliberately not
+  reused by the manual-order-creation path's number generation (same
+  `CheckoutService::generateOrderNumber()`, now `public static` so both
+  paths share it) - see `sql/schema.sql`'s `number_sequences` comment for
+  why order numbers stay out of the admin-configurable numbering system.
+
 ## [3.05] - 2026-08-16
 
 New feature: admin-configurable sequential numbering.

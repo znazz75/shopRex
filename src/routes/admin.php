@@ -83,8 +83,20 @@ return function (Router $router, Container $container): void {
     $router->get('/admin/finance', [FinanceAdminController::class, 'index'])->capability('finance');
 
     $router->get('/admin/orders', [OrderAdminController::class, 'index'])->capability('orders');
+    // /create must be registered before the {id} routes below - routes
+    // match in registration order (Core\Router's docblock), and {id}
+    // matches any path segment, so a later /create route would never be
+    // reached (a request for it would hit show()/save() with id="create" -
+    // i.e. id=0 - first).
+    $router->get('/admin/orders/create', [OrderAdminController::class, 'create'])->capability('orders');
+    $router->post('/admin/orders/create', [OrderAdminController::class, 'store'])->capability('orders');
     $router->get('/admin/orders/{id}', [OrderAdminController::class, 'show'])->capability('orders');
     $router->post('/admin/orders/{id}', [OrderAdminController::class, 'save'])->capability('orders');
+    $router->post('/admin/orders/{id}/items', [OrderAdminController::class, 'saveItems'])->capability('orders');
+    // The one route in this whole feature NOT gated by the plain 'orders'
+    // capability - cancelling (this project's "delete an order") is Super
+    // Admin only, see AdminAuth::CAPABILITIES.
+    $router->post('/admin/orders/{id}/cancel', [OrderAdminController::class, 'cancel'])->capability('orders_delete');
 
     $router->get('/admin/inventory', [InventoryAdminController::class, 'index'])->capability('inventory');
     $router->post('/admin/inventory/adjust', [InventoryAdminController::class, 'adjust'])->capability('inventory');

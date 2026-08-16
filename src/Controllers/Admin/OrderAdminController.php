@@ -6,7 +6,9 @@ use ShopRex\Core\Auth\AdminAuth;
 use ShopRex\Core\Container;
 use ShopRex\Core\Request;
 use ShopRex\Core\Response;
+use ShopRex\Models\Order;
 use ShopRex\Services\Mailer;
+use ShopRex\Services\OrderEditingService;
 
 /**
  * Direct port of admin/orders.php + admin/order_view.php. The admin's
@@ -22,11 +24,17 @@ final class OrderAdminController extends AdminCrudController
 {
     /** Raw database handle for this controller's queries against `orders` and its related tables (`order_items`, `payments`, `invoices`, `transactions`). */
     private readonly \PDO $pdo;
+    // The actual create/edit-items/cancel logic (Cart::priceLine()-based
+    // server-side pricing, stock deltas, ledger reconciliation, invoice
+    // regeneration) - see its class docblock. Kept out of this controller
+    // so those rules live in one place a non-admin caller could reuse too.
+    private readonly OrderEditingService $orderEditing;
 
     public function __construct(Request $request, Container $container)
     {
         parent::__construct($request, $container);
         $this->pdo = $container->make(\PDO::class);
+        $this->orderEditing = $container->make(OrderEditingService::class);
     }
 
     /** GET /admin/orders - lists orders, optionally filtered by status and/or real-vs-test-order. */
@@ -93,8 +101,17 @@ final class OrderAdminController extends AdminCrudController
         $invStmt->execute([$id]);
         $invoice = $invStmt->fetch();
 
+        // Everything the "Edit Line Items" card's product/shipping dropdowns
+        // need, plus this order's own edit history and whether the current
+        // admin is even allowed to cancel it (Super Admin only - see
+        // AdminAuth::CAPABILITIES['orders_delete']).
+        $products = $this->pdo->query('SELECT id, name, sku, price FROM products WHERE status = "active" ORDER BY name')->fetchAll();
+        $shippingMethods = $this->pdo->query('SELECT id, name FROM shipping_methods WHERE is_active = 1 ORDER BY sort_order, id')->fetchAll();
+        $editLog = $this->fetchAll('SELECT oel.*, au.username FROM order_edit_log oel LEFT JOIN admin_users au ON au.id = oel.admin_id WHERE oel.order_id = ? ORDER BY oel.created_at DESC', [$id]);
+        $canDelete = AdminAuth::can('orders_delete');
+
         $pageTitle = __('admin.order_view.title', ['number' => $order['order_number']]);
-        return $this->render('orders/show', compact('order', 'statuses', 'paymentStatuses', 'items', 'payments', 'invoice', 'pageTitle'));
+        return $this->render('orders/show', compact('order', 'statuses', 'paymentStatuses', 'items', 'payments', 'invoice', 'products', 'shippingMethods', 'editLog', 'canDelete', 'pageTitle'));
     }
 
     /**
@@ -193,6 +210,94 @@ final class OrderAdminController extends AdminCrudController
 
         $this->flash('success', __('admin.order_view.flash_updated'));
         return $this->redirect('/admin/orders/' . $id);
+    }
+
+    /** GET /admin/orders/create - the manual order-entry form (e.g. a phone order). Available to managers and Super Admin (the 'orders' capability - see AdminAuth::CAPABILITIES). */
+    public function create(Request $request): Response
+    {
+        return $this->render('orders/create', $this->createFormData([]));
+    }
+
+    /** POST /admin/orders/create - validates and creates a manually-entered order via Services\OrderEditingService::createManualOrder(). */
+    public function store(Request $request): Response
+    {
+        if ($csrfFailure = $this->requireCsrf()) {
+            return $csrfFailure;
+        }
+
+        $customer = null;
+        $customerId = (int)$request->post('customer_id', 0);
+        if ($customerId) {
+            $stmt = $this->pdo->prepare('SELECT * FROM customers WHERE id = ?');
+            $stmt->execute([$customerId]);
+            $customer = $stmt->fetch() ?: null;
+        }
+
+        try {
+            $order = $this->orderEditing->createManualOrder($request->all(), $customer, $this->admin['id']);
+        } catch (\RuntimeException $e) {
+            return $this->render('orders/create', $this->createFormData([$e->getMessage()]));
+        }
+
+        $this->flash('success', __('admin.orders.create.flash_created', ['number' => $order->orderNumber]));
+        return $this->redirect('/admin/orders/' . $order->id);
+    }
+
+    /** POST /admin/orders/{id}/items - applies a line-item add/remove/quantity change to an existing order via Services\OrderEditingService::applyLineItemChanges(). */
+    public function saveItems(Request $request): Response
+    {
+        if ($csrfFailure = $this->requireCsrf()) {
+            return $csrfFailure;
+        }
+        $id = (int)$request->routeParam('id', 0);
+        $order = Order::find($id);
+        if (!$order) {
+            $this->flash('error', __('admin.order_view.not_found'));
+            return $this->redirect('/admin/orders');
+        }
+
+        try {
+            $this->orderEditing->applyLineItemChanges($order, $request->all(), $this->admin['id']);
+            $this->flash('success', __('admin.orders.edit.flash_saved'));
+        } catch (\RuntimeException $e) {
+            $this->flash('error', $e->getMessage());
+        }
+
+        return $this->redirect('/admin/orders/' . $id);
+    }
+
+    /**
+     * POST /admin/orders/{id}/cancel - "delete" an order (never a real SQL
+     * DELETE - see Services\OrderEditingService::cancelAndRestock()'s
+     * docblock and sql/schema.sql's order_edit_log comment). Gated
+     * separately from the rest of this controller
+     * (->capability('orders_delete') in src/routes/admin.php) - Super
+     * Admin only, the one irreversible action in this feature.
+     */
+    public function cancel(Request $request): Response
+    {
+        if ($csrfFailure = $this->requireCsrf()) {
+            return $csrfFailure;
+        }
+        $id = (int)$request->routeParam('id', 0);
+        $order = Order::find($id);
+        if (!$order) {
+            $this->flash('error', __('admin.order_view.not_found'));
+            return $this->redirect('/admin/orders');
+        }
+
+        $this->orderEditing->cancelAndRestock($order, $this->admin['id']);
+        $this->flash('success', __('admin.orders.cancel.flash_cancelled'));
+        return $this->redirect('/admin/orders/' . $id);
+    }
+
+    /** Shared view-data builder for create()/a failed store() - every active product/shipping method/customer the form's dropdowns need, plus whatever validation errors (if any) should be shown above it. */
+    private function createFormData(array $errors): array
+    {
+        $products = $this->pdo->query('SELECT id, name, sku, price FROM products WHERE status = "active" ORDER BY name')->fetchAll();
+        $shippingMethods = $this->pdo->query('SELECT id, name FROM shipping_methods WHERE is_active = 1 ORDER BY sort_order, id')->fetchAll();
+        $customers = $this->pdo->query('SELECT id, first_name, last_name, email FROM customers WHERE status = "active" ORDER BY first_name, last_name')->fetchAll();
+        return compact('errors', 'products', 'shippingMethods', 'customers') + ['pageTitle' => __('admin.orders.create.title')];
     }
 
     /** Looks up one order by numeric ID, joined with its customer/guest email - shared by show() and save() so both always see the exact same shape of order row. */

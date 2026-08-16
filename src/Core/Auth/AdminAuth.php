@@ -50,7 +50,12 @@ final class AdminAuth
         'inventory'        => ['super_admin', 'manager'],
         'pages'            => ['super_admin', 'manager'],
         'menus'            => ['super_admin', 'manager'],
-        'orders'           => ['super_admin'],
+        // v3.06 - managers can view/create/edit orders (including line
+        // items); cancelling one (the one irreversible action - stock
+        // restore, order marked cancelled) is gated separately below,
+        // Super Admin only. See CLAUDE.md's order create/edit/cancel notes.
+        'orders'           => ['super_admin', 'manager'],
+        'orders_delete'    => ['super_admin'],
         'finance'          => ['super_admin'],
         'customers'        => ['super_admin'],
         'admins'           => ['super_admin'],

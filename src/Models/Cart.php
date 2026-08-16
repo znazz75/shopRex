@@ -196,6 +196,135 @@ final class Cart
     }
 
     /**
+     * Prices one product+quantity+options combination, re-reading current
+     * product/option data from the database - this is getItems()'s
+     * per-line logic, extracted into its own public method so anything
+     * else that needs to price a line item honestly (not just the
+     * session-backed cart) can call the exact same, single implementation
+     * rather than re-deriving price/tax/stock a second time. Used by
+     * Services\OrderEditingService for admin-created/edited orders.
+     *
+     * Returns null if the product no longer exists (getItems() skips that
+     * line entirely, same as before this extraction). See this class's
+     * docblock SECURITY note - the "AND po.product_id = ?" scoping below
+     * must never be removed.
+     */
+    public function priceLine(int $productId, int $quantity, array $optionValueIds, ?string $lang = null): ?array
+    {
+        $lang = $lang ?? I18n::current();
+        $stmt = $this->pdo->prepare(
+            'SELECT p.id, p.name, p.slug, p.price, p.discount_type, p.discount_value, p.discount_starts_at, p.discount_ends_at, p.stock_quantity, p.weight_kg, p.max_order_quantity,
+                    (SELECT rate FROM tax_rates WHERE id = p.tax_rate_id) AS tax_rate_percent,
+                    (SELECT image_path FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, sort_order ASC LIMIT 1) AS primary_image,
+                    (SELECT cropped_path FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, sort_order ASC LIMIT 1) AS primary_cropped_image
+             FROM products p WHERE p.id = ?'
+        );
+        $stmt->execute([$productId]);
+        $product = $stmt->fetch();
+        if (!$product) {
+            return null; // product removed/deleted
+        }
+        // Overlays this visitor's language onto the product's
+        // name/description before it's shown anywhere in the cart.
+        $product = $this->translations->applyToProduct($product, $lang);
+
+        $unitPrice = $this->discounts->effectivePrice($product);
+        $taxRate = $this->tax->percentFor($product);
+        $optionLabels = [];
+        $availableStock = (int)$product['stock_quantity'];
+        $variantId = null;
+        $variant = null;
+
+        if ($optionValueIds) {
+            // Preferred path: a real product_variants row for this exact
+            // combination, with its own dedicated stock count.
+            $variant = $this->findVariant($productId, $optionValueIds);
+            if ($variant) {
+                $variantId = (int)$variant['id'];
+                $availableStock = (int)$variant['stock_quantity'];
+            } else {
+                // No matching variant row - stock will instead be
+                // derived from the per-option-value fallback below
+                // (min() across each chosen value's own stock_quantity),
+                // so start high and let that loop narrow it down.
+                $availableStock = PHP_INT_MAX;
+            }
+
+            foreach ($optionValueIds as $optionValueId) {
+                // SECURITY (docs/SECURITY_AUDIT.md finding #1): this
+                // query is deliberately scoped by "po.product_id = ?" -
+                // without that condition, an attacker could submit an
+                // option_value_id that belongs to a completely
+                // different, unrelated product and have ITS
+                // price_modifier/stock_quantity applied to THIS
+                // product's line (e.g. subtracting a large negative
+                // modifier to get this item almost free, or borrowing a
+                // higher stock_quantity to bypass a real low-stock
+                // limit). Do not remove "AND po.product_id = ?" here.
+                $optStmt = $this->pdo->prepare(
+                    'SELECT COALESCE(povt.value, ov.value) AS value, ov.price_modifier, ov.stock_quantity,
+                            COALESCE(pot.name, po.name) AS option_name
+                     FROM product_option_values ov
+                     JOIN product_options po ON po.id = ov.product_option_id
+                     LEFT JOIN product_option_translations pot ON pot.product_option_id = po.id AND pot.language = ?
+                     LEFT JOIN product_option_value_translations povt ON povt.product_option_value_id = ov.id AND povt.language = ?
+                     WHERE ov.id = ? AND po.product_id = ?'
+                );
+                $optStmt->execute([$lang, $lang, $optionValueId, $productId]);
+                $option = $optStmt->fetch();
+                // A crafted/stale option_value_id that doesn't belong to
+                // this product simply returns no row (thanks to the
+                // product_id scoping above) and is silently skipped
+                // instead of contributing anything to price/stock.
+                if ($option) {
+                    $unitPrice += (float)$option['price_modifier'];
+                    $optionLabels[] = $option['option_name'] . ': ' . $option['value'];
+                    if (!$variant) {
+                        // Legacy fallback stock model: the line's
+                        // available stock is the SMALLEST stock_quantity
+                        // across all its chosen option values (e.g. if
+                        // "Red" has 3 left and "Large" has 10 left, only
+                        // 3 can be sold) - see class docblock's note on
+                        // the legacy Cart.php this mirrors.
+                        $availableStock = min($availableStock, (int)$option['stock_quantity']);
+                    }
+                }
+            }
+            // If no option value actually matched (all skipped above),
+            // $availableStock never got narrowed down from PHP_INT_MAX -
+            // fall back to the plain product stock rather than reporting
+            // an effectively-infinite quantity available.
+            if (!$variant && $availableStock === PHP_INT_MAX) {
+                $availableStock = (int)$product['stock_quantity'];
+            }
+        }
+
+        // Never let a (mis-scoped or otherwise unexpected) negative
+        // option modifier push a line into negative territory.
+        $unitPrice = max(0.0, $unitPrice);
+        $lineTotal = round($unitPrice * $quantity, 2);
+        $lineTax = round($lineTotal * $taxRate / 100, 2);
+
+        return [
+            'product_id'         => $product['id'],
+            'option_value_ids'   => $optionValueIds,
+            'variant_id'         => $variantId,
+            'name'               => $product['name'],
+            'slug'               => $product['slug'],
+            'image'              => getPrimaryImage($product),
+            'option_label'       => $optionLabels ? implode(', ', $optionLabels) : null,
+            'unit_price'         => $unitPrice,
+            'quantity'           => $quantity,
+            'line_total'         => $lineTotal,
+            'tax_rate'           => $taxRate,
+            'tax_amount'         => $lineTax,
+            'available_stock'    => $availableStock,
+            'weight_kg'          => (float)($product['weight_kg'] ?? 0),
+            'max_order_quantity' => $product['max_order_quantity'] !== null ? (int)$product['max_order_quantity'] : null,
+        ];
+    }
+
+    /**
      * Hydrate cart lines with current product/option data from the DB.
      * Returns line items plus a NET subtotal, a total tax amount, and a
      * tax breakdown grouped by rate. All prices here are NET.
@@ -217,128 +346,25 @@ final class Cart
         // trusted from what was stored earlier (session data is just
         // product_id + chosen option IDs + quantity). This is what keeps
         // prices/stock honest even if a product was edited, discounted, or
-        // ran out of stock after it was added to the cart.
+        // ran out of stock after it was added to the cart. priceLine()
+        // does the actual per-line work (see its docblock).
         foreach ($this->lines() as $key => $entry) {
-            $stmt = $this->pdo->prepare(
-                'SELECT p.id, p.name, p.slug, p.price, p.discount_type, p.discount_value, p.discount_starts_at, p.discount_ends_at, p.stock_quantity, p.weight_kg, p.max_order_quantity,
-                        (SELECT rate FROM tax_rates WHERE id = p.tax_rate_id) AS tax_rate_percent,
-                        (SELECT image_path FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, sort_order ASC LIMIT 1) AS primary_image,
-                        (SELECT cropped_path FROM product_images WHERE product_id = p.id ORDER BY is_primary DESC, sort_order ASC LIMIT 1) AS primary_cropped_image
-                 FROM products p WHERE p.id = ?'
-            );
-            $stmt->execute([$entry['product_id']]);
-            $product = $stmt->fetch();
-            if (!$product) {
-                continue; // product removed/deleted
-            }
-            // Overlays this visitor's language onto the product's
-            // name/description before it's shown anywhere in the cart.
-            $product = $this->translations->applyToProduct($product, $lang);
-
-            $unitPrice = $this->discounts->effectivePrice($product);
-            $taxRate = $this->tax->percentFor($product);
-            $optionLabels = [];
-            $availableStock = (int)$product['stock_quantity'];
             // Supports both the current storage shape (option_value_ids
             // array) and an older single option_value_id shape, so a cart
             // built under a previous version of this code still loads correctly.
             $optionValueIds = $entry['option_value_ids'] ?? (isset($entry['option_value_id']) && $entry['option_value_id'] ? [$entry['option_value_id']] : []);
-            $variantId = null;
-            $variant = null;
-
-            if ($optionValueIds) {
-                // Preferred path: a real product_variants row for this exact
-                // combination, with its own dedicated stock count.
-                $variant = $this->findVariant((int)$product['id'], $optionValueIds);
-                if ($variant) {
-                    $variantId = (int)$variant['id'];
-                    $availableStock = (int)$variant['stock_quantity'];
-                } else {
-                    // No matching variant row - stock will instead be
-                    // derived from the per-option-value fallback below
-                    // (min() across each chosen value's own stock_quantity),
-                    // so start high and let that loop narrow it down.
-                    $availableStock = PHP_INT_MAX;
-                }
-
-                foreach ($optionValueIds as $optionValueId) {
-                    // SECURITY (docs/SECURITY_AUDIT.md finding #1): this
-                    // query is deliberately scoped by "po.product_id = ?" -
-                    // without that condition, an attacker could submit an
-                    // option_value_id that belongs to a completely
-                    // different, unrelated product and have ITS
-                    // price_modifier/stock_quantity applied to THIS
-                    // product's line (e.g. subtracting a large negative
-                    // modifier to get this item almost free, or borrowing a
-                    // higher stock_quantity to bypass a real low-stock
-                    // limit). Do not remove "AND po.product_id = ?" here.
-                    $optStmt = $this->pdo->prepare(
-                        'SELECT COALESCE(povt.value, ov.value) AS value, ov.price_modifier, ov.stock_quantity,
-                                COALESCE(pot.name, po.name) AS option_name
-                         FROM product_option_values ov
-                         JOIN product_options po ON po.id = ov.product_option_id
-                         LEFT JOIN product_option_translations pot ON pot.product_option_id = po.id AND pot.language = ?
-                         LEFT JOIN product_option_value_translations povt ON povt.product_option_value_id = ov.id AND povt.language = ?
-                         WHERE ov.id = ? AND po.product_id = ?'
-                    );
-                    $optStmt->execute([$lang, $lang, $optionValueId, $product['id']]);
-                    $option = $optStmt->fetch();
-                    // A crafted/stale option_value_id that doesn't belong to
-                    // this product simply returns no row (thanks to the
-                    // product_id scoping above) and is silently skipped
-                    // instead of contributing anything to price/stock.
-                    if ($option) {
-                        $unitPrice += (float)$option['price_modifier'];
-                        $optionLabels[] = $option['option_name'] . ': ' . $option['value'];
-                        if (!$variant) {
-                            // Legacy fallback stock model: the line's
-                            // available stock is the SMALLEST stock_quantity
-                            // across all its chosen option values (e.g. if
-                            // "Red" has 3 left and "Large" has 10 left, only
-                            // 3 can be sold) - see class docblock's note on
-                            // the legacy Cart.php this mirrors.
-                            $availableStock = min($availableStock, (int)$option['stock_quantity']);
-                        }
-                    }
-                }
-                // If no option value actually matched (all skipped above),
-                // $availableStock never got narrowed down from PHP_INT_MAX -
-                // fall back to the plain product stock rather than reporting
-                // an effectively-infinite quantity available.
-                if (!$variant && $availableStock === PHP_INT_MAX) {
-                    $availableStock = (int)$product['stock_quantity'];
-                }
+            $priced = $this->priceLine((int)$entry['product_id'], (int)$entry['quantity'], $optionValueIds, $lang);
+            if ($priced === null) {
+                continue; // product removed/deleted
             }
+            $priced['key'] = $key;
+            $items[] = $priced;
 
-            // Never let a (mis-scoped or otherwise unexpected) negative
-            // option modifier push a line into negative territory.
-            $unitPrice = max(0.0, $unitPrice);
-            $lineTotal = round($unitPrice * $entry['quantity'], 2);
-            $lineTax = round($lineTotal * $taxRate / 100, 2);
-            $subtotal += $lineTotal;
-            $taxTotal += $lineTax;
-            if ($taxRate > 0) {
-                $taxBreakdown[$taxRate] = ($taxBreakdown[$taxRate] ?? 0) + $lineTax;
+            $subtotal += $priced['line_total'];
+            $taxTotal += $priced['tax_amount'];
+            if ($priced['tax_rate'] > 0) {
+                $taxBreakdown[$priced['tax_rate']] = ($taxBreakdown[$priced['tax_rate']] ?? 0) + $priced['tax_amount'];
             }
-
-            $items[] = [
-                'key'                => $key,
-                'product_id'         => $product['id'],
-                'option_value_ids'   => $optionValueIds,
-                'variant_id'         => $variantId,
-                'name'               => $product['name'],
-                'slug'               => $product['slug'],
-                'image'              => getPrimaryImage($product),
-                'option_label'       => $optionLabels ? implode(', ', $optionLabels) : null,
-                'unit_price'         => $unitPrice,
-                'quantity'           => (int)$entry['quantity'],
-                'line_total'         => $lineTotal,
-                'tax_rate'           => $taxRate,
-                'tax_amount'         => $lineTax,
-                'available_stock'    => $availableStock,
-                'weight_kg'          => (float)($product['weight_kg'] ?? 0),
-                'max_order_quantity' => $product['max_order_quantity'] !== null ? (int)$product['max_order_quantity'] : null,
-            ];
         }
 
         // Sorts the tax-rate breakdown by rate ascending (e.g. 7% before

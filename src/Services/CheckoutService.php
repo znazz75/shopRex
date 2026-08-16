@@ -28,6 +28,7 @@ final class CheckoutService
         private readonly PaymentGatewayFactory $gateways,
         private readonly SettingsRepository $settings,
         private readonly NumberSequenceService $sequences,
+        private readonly OrderStockService $stock,
     ) {
     }
 
@@ -151,7 +152,7 @@ final class CheckoutService
                 }
             }
 
-            $orderNumber = $this->generateOrderNumber();
+            $orderNumber = self::generateOrderNumber();
 
             $stmt = $this->pdo->prepare(
                 'INSERT INTO orders (order_number, customer_id, guest_email, status, payment_method, payment_status, is_test_order, language,
@@ -171,75 +172,32 @@ final class CheckoutService
             $orderId = (int)$this->pdo->lastInsertId();
 
             $itemStmt = $this->pdo->prepare(
-                'INSERT INTO order_items (order_id, product_id, product_name, option_summary, quantity, unit_price, total_price, tax_rate_percent, tax_amount)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO order_items (order_id, product_id, product_name, option_summary, product_variant_id, option_value_ids, quantity, unit_price, total_price, tax_rate_percent, tax_amount)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
-            // The "AND stock_quantity >= ?" guard (plus the rowCount() check
-            // at each call site below) is what actually prevents overselling
-            // under concurrent checkouts for the same item - the plain
-            // pre-check above can't, since it reads stock before this
-            // transaction starts. A guarded UPDATE is atomic per-row in
-            // MySQL/InnoDB, so two simultaneous transactions for the last
-            // unit can't both succeed: whichever commits second sees the
-            // row already short and its UPDATE simply matches zero rows.
-            $stockStmt = $this->pdo->prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?');
-            $variantStockStmt = $this->pdo->prepare('UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?');
-            // Legacy fallback only (see Models\Cart::findVariant()'s fallback path).
-            $optStockStmt = $this->pdo->prepare('UPDATE product_option_values SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?');
-            $logStmt = $this->pdo->prepare(
-                'INSERT INTO inventory_log (product_id, option_value_id, product_variant_id, change_qty, reason, reference, is_test) VALUES (?, ?, ?, ?, "sale", ?, ?)'
-            );
-
             foreach ($items as $item) {
+                // product_variant_id/option_value_ids record which stock
+                // pool this line was actually tracked against, so a later
+                // cancel/edit (Services\OrderEditingService) can restock
+                // the right one - see sql/schema.sql's comment on these
+                // columns. option_value_ids is stored as a plain
+                // comma-separated list (same simplicity level as the
+                // existing option_summary column) - empty() means "none".
                 $itemStmt->execute([
                     $orderId, $item['product_id'], $item['name'], $item['option_label'],
+                    $item['variant_id'] ?: null,
+                    !empty($item['option_value_ids']) ? implode(',', $item['option_value_ids']) : null,
                     $item['quantity'], $item['unit_price'], $item['line_total'],
                     $item['tax_rate'], $item['tax_amount'],
                 ]);
-
-                // Test orders are still written to the inventory log (so
-                // the trial run is visible/auditable) but never actually
-                // decrement stock.
-                //
-                // Which stock column gets decremented depends on how this
-                // line item was configured: a plain product with no options,
-                // a product tracked via a specific variant combination
-                // (product_variants), or - the legacy fallback path - a set
-                // of individual option value IDs (see Models\Cart's
-                // docblock and docs/SECURITY_AUDIT.md finding #1 for why
-                // that fallback path must stay carefully scoped elsewhere).
-                if (empty($item['option_value_ids'])) {
-                    if (!$isTestOrder) {
-                        $stockStmt->execute([$item['quantity'], $item['product_id'], $item['quantity']]);
-                        // Zero rows matched means a concurrent order already
-                        // took the remaining stock between our pre-check
-                        // above and this UPDATE - abort and roll back rather
-                        // than log a sale that was never actually reserved.
-                        if ($stockStmt->rowCount() === 0) {
-                            throw new \RuntimeException('"' . $item['name'] . '" just sold out - please try again.');
-                        }
-                    }
-                    $logStmt->execute([$item['product_id'], null, null, -$item['quantity'], $orderNumber, $isTestOrder ? 1 : 0]);
-                } elseif ($item['variant_id']) {
-                    if (!$isTestOrder) {
-                        $variantStockStmt->execute([$item['quantity'], $item['variant_id'], $item['quantity']]);
-                        if ($variantStockStmt->rowCount() === 0) {
-                            throw new \RuntimeException('"' . $item['name'] . '" just sold out - please try again.');
-                        }
-                    }
-                    $logStmt->execute([$item['product_id'], null, $item['variant_id'], -$item['quantity'], $orderNumber, $isTestOrder ? 1 : 0]);
-                } else {
-                    foreach ($item['option_value_ids'] as $optionValueId) {
-                        if (!$isTestOrder) {
-                            $optStockStmt->execute([$item['quantity'], $optionValueId, $item['quantity']]);
-                            if ($optStockStmt->rowCount() === 0) {
-                                throw new \RuntimeException('"' . $item['name'] . '" just sold out - please try again.');
-                            }
-                        }
-                        $logStmt->execute([$item['product_id'], $optionValueId, null, -$item['quantity'], $orderNumber, $isTestOrder ? 1 : 0]);
-                    }
-                }
             }
+            // The actual stock decrement (oversell-safe guarded UPDATE +
+            // rowCount() check, test-order exemption, inventory_log write)
+            // lives in OrderStockService - shared with admin-created/edited
+            // orders (Services\OrderEditingService) so there's exactly one
+            // implementation of this security-critical logic, not a second
+            // copy that could drift out of sync.
+            $this->stock->decrementForItems($items, $orderNumber, $isTestOrder, $this->pdo);
 
             // The payments row starts "pending" regardless of method - even
             // for gateways that end up completing immediately below, so
@@ -368,8 +326,8 @@ final class CheckoutService
         return $order;
     }
 
-    /** Generates the human-facing order number shown to customers/admins (e.g. "SR20260815-A1B2C3") - a date prefix plus 3 random bytes hex-encoded, not a sequential ID, so order numbers can't be easily guessed/enumerated in sequence. */
-    private function generateOrderNumber(): string
+    /** Generates the human-facing order number shown to customers/admins (e.g. "SR20260815-A1B2C3") - a date prefix plus 3 random bytes hex-encoded, not a sequential ID, so order numbers can't be easily guessed/enumerated in sequence. Public+static (pure, stateless) so Services\OrderEditingService's admin-created-order path can reuse the exact same scheme rather than a second implementation - order numbers stay date+random everywhere, deliberately never admin-configurable (see sql/schema.sql's number_sequences comment). */
+    public static function generateOrderNumber(): string
     {
         return 'SR' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
     }
