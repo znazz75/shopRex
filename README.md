@@ -56,9 +56,9 @@ list below.
 - **Menus** — drag-to-reorder (jQuery UI Sortable) management of the main nav and footer submenu, with custom-URL/category/page link types and nesting for dropdowns
 - **Email Templates** — edit the shared header/footer and every email's subject/body, per language, with a token reference — see [Email templates](#email-templates)
 - **Settings** — shop details, bank transfer details, default items-per-page, default language, VAT toggle, data-retention period, and the frontend theme switcher
-- Financial management (revenue dashboard, revenue by month/payment method, transaction ledger — real orders only) — Super Admin only
+- Financial management (revenue dashboard, revenue by month/payment method, transaction ledger, a **printable annual report** of all paid orders in a chosen year — real orders only) — Super Admin only
 - Customer management (list, order history, block/unblock, create test users, **GDPR data export/erasure**) — Super Admin only
-- Order management (status + payment status updates, customer notifications, invoice download, test-order badges/filter) — Super Admin only
+- **Order management** — status + payment status updates, customer notifications, invoice download/**resend by email**, test-order badges/filter, **manually create an order** (existing customer or guest, with server-recalculated price/tax/shipping/stock), and **edit an existing order's line items** (even an already-paid/invoiced one — the ledger and invoice both stay in sync, and an audit trail records every change) — all available to Manager and Super Admin. **Cancelling an order** (never a real delete — it restocks every item, reverses any payment, and keeps the order row for accounting records) is the one order action reserved for Super Admin only.
 - **Contact Messages** — inbox for the storefront contact form, with status tracking — Super Admin only
 - **Withdrawals** — review/approve/reject self-service withdrawal requests, with an optional customer notification email — Super Admin only
 - **RMA Tickets** — review defect reports, record resolution notes, with an optional customer notification email — Super Admin only
@@ -161,12 +161,12 @@ production use, especially file upload handling and admin access control.
 
 ## Admin roles
 
-Defined in `CoreAuthAdminAuth`:
+Defined in `Core\Auth\AdminAuth`:
 
 | Role | Access |
 |---|---|
-| **Super Admin** | Everything: products, categories, inventory, pages, menus, orders, finance, customers, settings, shipping, and managing other admin accounts |
-| **Manager** | Products, categories, inventory, pages, and menus only ("article/content management") — no access to orders, finance, customers, settings, shipping, or admin accounts |
+| **Super Admin** | Everything: products, categories, inventory, pages, menus, orders (including cancelling one), finance, customers, settings, shipping, and managing other admin accounts |
+| **Manager** | Products, categories, inventory, pages, and menus, plus **orders** (view, change status, manually create, and edit an order's line items — but not cancel one) — still no access to finance, customers, settings, shipping, or admin accounts |
 
 Manage admin accounts under **Admin → Admin Accounts** (Super Admin only,
 Admin → Admin Accounts): create additional accounts, assign a
@@ -174,10 +174,13 @@ role, disable/re-enable, reset passwords, or delete. The system always
 keeps at least one active Super Admin — you can't delete, demote, or
 disable the last one.
 
-To add a new role, add a label to `ADMIN_ROLES` and list which sections it
-grants access to in `ADMIN_CAPABILITIES` in that same file; update the
-`role` column's `ENUM` in `sql/schema.sql` (or `ALTER TABLE admin_users
-MODIFY role ENUM(...)` on an existing database) to match.
+To add a new role, add a label to `AdminAuth::ROLES` and list which
+sections/capabilities it grants access to in `AdminAuth::CAPABILITIES` in
+that same file; update the `role` column's `ENUM` in `sql/schema.sql` (or
+`ALTER TABLE admin_users MODIFY role ENUM(...)` on an existing database)
+to match. Note that "orders" and "cancelling an order" are two separate
+capabilities (`orders` / `orders_delete`) precisely so a role can be
+given one without the other, as Manager is here.
 
 ## Frontend theme
 

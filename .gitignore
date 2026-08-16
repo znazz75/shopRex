@@ -24,3 +24,6 @@ Thumbs.db
 # Composer (only if you opt into PHPMailer/dompdf/etc. per the README)
 vendor/
 composer.lock
+
+# Private planning doc - not for the repo
+claude_prompt.md

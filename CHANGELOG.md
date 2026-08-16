@@ -8,6 +8,21 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [3.08] - 2026-08-16
+
+Documentation fix - no code changes.
+
+### Fixed
+- `README.md`/`README.de.md`'s "Order management" bullet and "Admin
+  roles" section were stale since v3.06: they still said order management
+  was Super-Admin-only and described a `Manager` role with no order
+  access at all, and the German "Admin roles" section still pointed at
+  the pre-v2.00 `admin/includes/roles.php` (removed in v3.00). Both now
+  correctly describe the current `orders`/`orders_delete` capability
+  split - Manager can view/create/edit orders, cancelling one is Super
+  Admin only - and reference `Core\Auth\AdminAuth::ROLES`/`::CAPABILITIES`
+  by their real names.
+
 ## [3.07] - 2026-08-16
 
 New features: resend invoice by email, printable annual report of paid

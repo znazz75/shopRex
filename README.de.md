@@ -61,9 +61,9 @@ unten.
 - **Menüs** — Drag-&-Drop-Verwaltung (jQuery UI Sortable) des Hauptmenüs und des Footer-Untermenüs, mit Linktypen für benutzerdefinierte URL/Kategorie/Seite und Verschachtelung für Dropdowns
 - **E-Mail-Vorlagen** — gemeinsamen Header/Footer und Betreff/Text jeder E-Mail bearbeiten, pro Sprache, mit Referenz der verfügbaren Platzhalter — siehe [E-Mail-Vorlagen](#e-mail-vorlagen)
 - **Einstellungen** — Shop-Daten, Bankdaten für Überweisungen, Standardanzahl Artikel pro Seite, Standardsprache, MwSt.-Umschalter, Datenaufbewahrungsdauer und Frontend-Theme-Umschalter
-- Finanzverwaltung (Umsatz-Dashboard, Umsatz nach Monat/Zahlungsart, Transaktionsjournal — nur echte Bestellungen) — nur Super Admin
+- Finanzverwaltung (Umsatz-Dashboard, Umsatz nach Monat/Zahlungsart, Transaktionsjournal, ein **druckbarer Jahresbericht** aller bezahlten Bestellungen eines gewählten Jahres — nur echte Bestellungen) — nur Super Admin
 - Kundenverwaltung (Liste, Bestellhistorie, sperren/entsperren, Testbenutzer anlegen, **DSGVO-Datenexport/-löschung**) — nur Super Admin
-- Bestellverwaltung (Status- und Zahlungsstatus-Updates, Kundenbenachrichtigungen, Rechnungsdownload, Testbestellungs-Badges/Filter) — nur Super Admin
+- **Bestellverwaltung** — Status- und Zahlungsstatus-Updates, Kundenbenachrichtigungen, Rechnungsdownload/**erneuter E-Mail-Versand**, Testbestellungs-Badges/Filter, **eine Bestellung manuell anlegen** (bestehender Kunde oder Gast, mit serverseitig neu berechnetem Preis/Steuer/Versand/Bestand) und **die Artikel einer bestehenden Bestellung bearbeiten** (auch bei einer bereits bezahlten/in Rechnung gestellten Bestellung — Buchhaltungsjournal und Rechnung bleiben dabei konsistent, und jede Änderung wird protokolliert) — alles für Manager und Super Admin verfügbar. Das **Stornieren einer Bestellung** (niemals ein echtes Löschen — Bestand wird zurückgebucht, eine erfasste Zahlung storniert, die Bestellzeile bleibt aus buchhalterischen Gründen erhalten) ist die einzige Bestellaktion, die ausschließlich dem Super Admin vorbehalten ist.
 - **Kontaktnachrichten** — Posteingang für das Kontaktformular im Shop, mit Statusverfolgung — nur Super Admin
 - **Widerrufe** — Widerrufe mit Selbstbedienung prüfen/genehmigen/ablehnen, optional mit Kundenbenachrichtigung per E-Mail — nur Super Admin
 - **RMA-Tickets** — Mängelmeldungen prüfen, Lösungshinweise erfassen, optional mit Kundenbenachrichtigung per E-Mail — nur Super Admin
@@ -177,12 +177,12 @@ Zugriffskontrolle des Admin-Bereichs.
 
 ## Admin-Rollen
 
-Definiert in [admin/includes/roles.php](admin/includes/roles.php):
+Definiert in `Core\Auth\AdminAuth`:
 
 | Rolle | Zugriff |
 |---|---|
-| **Super Admin** | Alles: Produkte, Kategorien, Lager, Seiten, Menüs, Bestellungen, Finanzen, Kunden, Einstellungen, Versand, und Verwaltung anderer Admin-Konten |
-| **Manager** | Nur Produkte, Kategorien, Lager und Seiten/Menüs ("Artikel-/Inhaltsverwaltung") — kein Zugriff auf Bestellungen, Finanzen, Kunden, Einstellungen, Versand oder Admin-Konten |
+| **Super Admin** | Alles: Produkte, Kategorien, Lager, Seiten, Menüs, Bestellungen (einschließlich Stornieren), Finanzen, Kunden, Einstellungen, Versand, und Verwaltung anderer Admin-Konten |
+| **Manager** | Produkte, Kategorien, Lager, Seiten und Menüs, plus **Bestellungen** (ansehen, Status ändern, manuell anlegen und Artikel einer Bestellung bearbeiten — aber nicht stornieren) — weiterhin kein Zugriff auf Finanzen, Kunden, Einstellungen, Versand oder Admin-Konten |
 
 Admin-Konten verwalten unter **Admin → Admin-Konten** (nur Super Admin,
 Admin → Admin-Konten): zusätzliche Konten anlegen, Rolle
@@ -190,11 +190,14 @@ zuweisen, deaktivieren/reaktivieren, Passwörter zurücksetzen oder löschen.
 Das System behält immer mindestens einen aktiven Super Admin - der letzte
 kann nicht gelöscht, herabgestuft oder deaktiviert werden.
 
-Um eine neue Rolle hinzuzufügen: eine Bezeichnung zu `ADMIN_ROLES`
-hinzufügen und in `ADMIN_CAPABILITIES` in derselben Datei auflisten,
-welche Bereiche sie freischaltet; das `ENUM` der Spalte `role` in
-`sql/schema.sql` entsprechend anpassen (oder bei einer bestehenden
-Datenbank `ALTER TABLE admin_users MODIFY role ENUM(...)`).
+Um eine neue Rolle hinzuzufügen: eine Bezeichnung zu `AdminAuth::ROLES`
+hinzufügen und in `AdminAuth::CAPABILITIES` in derselben Datei auflisten,
+welche Bereiche/Capabilities sie freischaltet; das `ENUM` der Spalte
+`role` in `sql/schema.sql` entsprechend anpassen (oder bei einer
+bestehenden Datenbank `ALTER TABLE admin_users MODIFY role ENUM(...)`).
+"Bestellungen" und "eine Bestellung stornieren" sind zwei getrennte
+Capabilities (`orders` / `orders_delete`), gerade damit eine Rolle die
+eine ohne die andere erhalten kann, wie hier beim Manager.
 
 ## Frontend-Theme
 
