@@ -810,6 +810,7 @@ return [
     'admin.rma_view.resolution_notes_hint'                => "Affichées au client lors de la notification (ex. ce qui a été réparé/remplacé).",
     'admin.rma_view.notify_customer_hint'                  => "Envoie le modèle rma_ticket_status_update avec les notes de résolution ci-dessus.",
     'admin.rma_view.flash_updated'                          => 'Ticket SAV mis à jour.',
+    'admin.rma_view.flash_updated_error'                    => 'Impossible de mettre à jour le ticket SAV : {message}',
 
     'admin.legal_documents'                      => 'Documents légaux',
     'admin.legal_documents.existing'              => 'Documents existants',

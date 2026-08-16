@@ -810,6 +810,7 @@ return [
     'admin.rma_view.resolution_notes_hint'                => 'Wird dem Kunden bei der Benachrichtigung angezeigt (z. B. was repariert/ersetzt wurde).',
     'admin.rma_view.notify_customer_hint'                  => 'Sendet die Vorlage rma_ticket_status_update mit den obigen Lösungshinweisen.',
     'admin.rma_view.flash_updated'                          => 'RMA-Ticket aktualisiert.',
+    'admin.rma_view.flash_updated_error'                    => 'RMA-Ticket konnte nicht aktualisiert werden: {message}',
 
     'admin.legal_documents'                      => 'Rechtsdokumente',
     'admin.legal_documents.existing'              => 'Vorhandene Dokumente',

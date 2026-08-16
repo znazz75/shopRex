@@ -103,10 +103,21 @@ final class RmaAdminController extends AdminCrudController
 
         // transitionTo() is the shared CustomerRequest behavior (also used by
         // WithdrawalRequest) that records the status change plus which admin
-        // made it and any notes - see CLAUDE.md's legal/compliance domain notes.
-        $ticket->transitionTo($newStatus, $this->pdo, $this->admin['id'], $adminNotes !== '' ? $adminNotes : null);
-        $this->pdo->prepare('UPDATE rma_tickets SET resolution_notes = ? WHERE id = ?')
-            ->execute([$resolutionNotes !== '' ? $resolutionNotes : null, $id]);
+        // made it and any notes - see CLAUDE.md's legal/compliance domain
+        // notes. Wrapped together with the resolution_notes UPDATE in one
+        // transaction so a failure between the two can't leave the ticket's
+        // status changed without its resolution notes actually saved.
+        $this->pdo->beginTransaction();
+        try {
+            $ticket->transitionTo($newStatus, $this->pdo, $this->admin['id'], $adminNotes !== '' ? $adminNotes : null);
+            $this->pdo->prepare('UPDATE rma_tickets SET resolution_notes = ? WHERE id = ?')
+                ->execute([$resolutionNotes !== '' ? $resolutionNotes : null, $id]);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            $this->flash('error', __('admin.rma_view.flash_updated_error', ['message' => $e->getMessage()]));
+            return $this->redirect('/admin/rma-tickets/' . $id);
+        }
 
         // Emailing the customer is opt-in per save (a checkbox on the form) -
         // an admin can update internal notes/status without necessarily

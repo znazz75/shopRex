@@ -815,6 +815,7 @@ return [
     'admin.rma_view.resolution_notes_hint'                => 'Shown to the customer when they\'re notified (e.g. what was repaired/replaced).',
     'admin.rma_view.notify_customer_hint'                  => 'Sends the rma_ticket_status_update template with the resolution notes above.',
     'admin.rma_view.flash_updated'                          => 'RMA ticket updated.',
+    'admin.rma_view.flash_updated_error'                    => 'Could not update the RMA ticket: {message}',
 
     'admin.legal_documents'                      => 'Legal Documents',
     'admin.legal_documents.existing'              => 'Existing Documents',

@@ -146,11 +146,31 @@ class Order extends Model
         // even a deliberate replay) would re-run everything below and
         // insert ANOTHER "sale" row into the transactions ledger for the
         // same payment every time - see docs/SECURITY_AUDIT.md finding #3.
+        //
+        // The in-memory check alone only catches SEQUENTIAL repeats (the
+        // common case - browser back/forward, a reloaded return-URL page):
+        // two genuinely concurrent capture requests for the same order
+        // (e.g. two tabs, or a double-submitted return-URL hit while the
+        // gateway API call is still in flight) could both read this object
+        // as not-yet-paid before either one writes. The UPDATE's own
+        // "AND payment_status != 'paid'" condition plus the rowCount()
+        // check below is what actually closes that: it's atomic per-row in
+        // MySQL/InnoDB, so whichever request's UPDATE runs second sees the
+        // row already paid and simply matches zero rows.
         if ($this->paymentStatus === 'paid') {
             return;
         }
 
-        $pdo->prepare('UPDATE orders SET status = "processing", payment_status = "paid" WHERE id = ?')->execute([$this->id]);
+        $stmt = $pdo->prepare('UPDATE orders SET status = "processing", payment_status = "paid" WHERE id = ? AND payment_status != "paid"');
+        $stmt->execute([$this->id]);
+        if ($stmt->rowCount() === 0) {
+            // Lost the race to another concurrent call - that call is
+            // already writing (or has written) the payments/transactions
+            // rows below, so this call must not write them a second time.
+            $this->status = 'processing';
+            $this->paymentStatus = 'paid';
+            return;
+        }
         // COALESCE(?, transaction_id) keeps the existing transaction_id if
         // this call didn't provide a new one (e.g. a gateway path that
         // confirms payment without returning a fresh id), rather than

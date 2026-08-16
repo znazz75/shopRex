@@ -8,6 +8,25 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [3.03] - 2026-08-16
+
+Second batch of fixes from the in-progress security/bug audit.
+
+### Fixed
+- **Payment-capture idempotency race** in `Order::markPaid()`: the
+  double-ledger-entry guard (docs/SECURITY_AUDIT.md finding #3) was an
+  in-memory check only, so two genuinely concurrent `/checkout/capture`
+  requests for the same order (two tabs, a double-submitted return-URL hit
+  while the gateway API call was still in flight) could both pass it
+  before either had written, each inserting its own "sale" row into the
+  `transactions` ledger. The `orders` UPDATE is now conditional
+  (`AND payment_status != 'paid'`) with a `rowCount()` check, so whichever
+  request loses the race cleanly no-ops instead of double-counting revenue.
+- Same "sequential-only" transaction gap as `OrderAdminController::save()`
+  (fixed in 3.02) also existed in `RmaAdminController::save()` (status
+  transition + resolution notes as two unwrapped statements) - now
+  transaction-wrapped the same way.
+
 ## [3.02] - 2026-08-16
 
 First batch of fixes from a full security/bug audit (in progress).
