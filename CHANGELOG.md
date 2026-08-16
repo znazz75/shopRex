@@ -8,6 +8,41 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [3.04] - 2026-08-16
+
+Manual verification pass for the 3.02/3.03 audit fixes on a local XAMPP
+instance - no code changes, this entry records what was verified.
+
+### Verified
+- **Checkout / stock decrement**: placed a real order end-to-end
+  (storefront cart -> checkout -> bank transfer); `orders`, `order_items`,
+  `payments`, and `inventory_log` all wrote correctly and
+  `products.stock_quantity` decremented exactly once, confirming the 3.02
+  guarded-UPDATE change is a no-op in the normal (non-race) path.
+- **Admin order-status save**: saved an order to paid via the admin UI -
+  `orders`/`payments`/`transactions` all committed together; re-saving the
+  same already-paid order left the ledger at exactly one row (no
+  double-count).
+- **Admin RMA-status save**: seeded a ticket and saved a status + resolution
+  notes change together via the admin UI - both writes committed.
+- **Order-confirmation / invoice-download access control** (finding #4):
+  confirmed live - a guest's own just-placed order is viewable from the
+  same session (200) and denied from an unrelated session (403 "not
+  found"); invoice download correctly denies even the owning guest's own
+  session (logged-in owner or admin only, by design) and allows admin
+  access.
+- **Both race fixes reproduced directly against MySQL**: ran genuinely
+  concurrent SQL matching the guarded stock-decrement and
+  `Order::markPaid()` statements - in each case exactly one of the two
+  concurrent UPDATEs affected a row and the other matched zero, with the
+  underlying value never going negative/double-counted - proving the fix
+  at the database level, not just by code review.
+- Re-verified payment-capture amount/identifier binding in both
+  `PayPalGateway::capture()` and `CreditCardGateway::capture()`, the
+  rate limiter's IP source (`REMOTE_ADDR`, not a spoofable header), and
+  `InventoryAdminController::adjust()`'s existing transaction/ownership
+  guards - no issues found.
+
 ## [3.03] - 2026-08-16
 
 Second batch of fixes from the in-progress security/bug audit.
