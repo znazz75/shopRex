@@ -136,6 +136,14 @@ final class CheckoutService
             $this->pdo->beginTransaction();
 
             // Re-check stock for every line before committing to the order.
+            // This still isn't the whole story: available_stock was read
+            // outside this transaction, so a second checkout for the same
+            // item running concurrently could pass this same check before
+            // either has decremented anything (classic check-then-act race,
+            // not closed by wrapping the check alone in a transaction) - the
+            // UPDATE ... WHERE stock_quantity >= ? guards below are what
+            // actually close it, by making the decrement itself conditional
+            // and re-checked via rowCount().
             foreach ($items as $item) {
                 if ($item['quantity'] > $item['available_stock']) {
                     throw new \RuntimeException('"' . $item['name'] . '" only has ' . $item['available_stock'] . ' left in stock.');
@@ -165,10 +173,18 @@ final class CheckoutService
                 'INSERT INTO order_items (order_id, product_id, product_name, option_summary, quantity, unit_price, total_price, tax_rate_percent, tax_amount)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
-            $stockStmt = $this->pdo->prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?');
-            $variantStockStmt = $this->pdo->prepare('UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ?');
+            // The "AND stock_quantity >= ?" guard (plus the rowCount() check
+            // at each call site below) is what actually prevents overselling
+            // under concurrent checkouts for the same item - the plain
+            // pre-check above can't, since it reads stock before this
+            // transaction starts. A guarded UPDATE is atomic per-row in
+            // MySQL/InnoDB, so two simultaneous transactions for the last
+            // unit can't both succeed: whichever commits second sees the
+            // row already short and its UPDATE simply matches zero rows.
+            $stockStmt = $this->pdo->prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?');
+            $variantStockStmt = $this->pdo->prepare('UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?');
             // Legacy fallback only (see Models\Cart::findVariant()'s fallback path).
-            $optStockStmt = $this->pdo->prepare('UPDATE product_option_values SET stock_quantity = stock_quantity - ? WHERE id = ?');
+            $optStockStmt = $this->pdo->prepare('UPDATE product_option_values SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?');
             $logStmt = $this->pdo->prepare(
                 'INSERT INTO inventory_log (product_id, option_value_id, product_variant_id, change_qty, reason, reference, is_test) VALUES (?, ?, ?, ?, "sale", ?, ?)'
             );
@@ -193,18 +209,31 @@ final class CheckoutService
                 // that fallback path must stay carefully scoped elsewhere).
                 if (empty($item['option_value_ids'])) {
                     if (!$isTestOrder) {
-                        $stockStmt->execute([$item['quantity'], $item['product_id']]);
+                        $stockStmt->execute([$item['quantity'], $item['product_id'], $item['quantity']]);
+                        // Zero rows matched means a concurrent order already
+                        // took the remaining stock between our pre-check
+                        // above and this UPDATE - abort and roll back rather
+                        // than log a sale that was never actually reserved.
+                        if ($stockStmt->rowCount() === 0) {
+                            throw new \RuntimeException('"' . $item['name'] . '" just sold out - please try again.');
+                        }
                     }
                     $logStmt->execute([$item['product_id'], null, null, -$item['quantity'], $orderNumber, $isTestOrder ? 1 : 0]);
                 } elseif ($item['variant_id']) {
                     if (!$isTestOrder) {
-                        $variantStockStmt->execute([$item['quantity'], $item['variant_id']]);
+                        $variantStockStmt->execute([$item['quantity'], $item['variant_id'], $item['quantity']]);
+                        if ($variantStockStmt->rowCount() === 0) {
+                            throw new \RuntimeException('"' . $item['name'] . '" just sold out - please try again.');
+                        }
                     }
                     $logStmt->execute([$item['product_id'], null, $item['variant_id'], -$item['quantity'], $orderNumber, $isTestOrder ? 1 : 0]);
                 } else {
                     foreach ($item['option_value_ids'] as $optionValueId) {
                         if (!$isTestOrder) {
-                            $optStockStmt->execute([$item['quantity'], $optionValueId]);
+                            $optStockStmt->execute([$item['quantity'], $optionValueId, $item['quantity']]);
+                            if ($optStockStmt->rowCount() === 0) {
+                                throw new \RuntimeException('"' . $item['name'] . '" just sold out - please try again.');
+                            }
                         }
                         $logStmt->execute([$item['product_id'], $optionValueId, null, -$item['quantity'], $orderNumber, $isTestOrder ? 1 : 0]);
                     }

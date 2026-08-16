@@ -390,6 +390,7 @@ return [
     // ---- Admin: order view ----
     'admin.order_view.not_found'    => 'Order not found.',
     'admin.order_view.flash_updated' => 'Order updated.',
+    'admin.order_view.flash_updated_error' => 'Could not update the order: {message}',
     'admin.order_view.title'          => 'Order {number}',
     'admin.order_view.heading'         => 'Order {number}',
     'admin.order_view.download_invoice' => 'Download Invoice ({number})',

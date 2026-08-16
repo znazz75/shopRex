@@ -389,6 +389,7 @@ return [
     // ---- Admin: order view ----
     'admin.order_view.not_found'    => 'Bestellung nicht gefunden.',
     'admin.order_view.flash_updated' => 'Bestellung aktualisiert.',
+    'admin.order_view.flash_updated_error' => 'Bestellung konnte nicht aktualisiert werden: {message}',
     'admin.order_view.title'          => 'Bestellung {number}',
     'admin.order_view.heading'         => 'Bestellung {number}',
     'admin.order_view.download_invoice' => 'Rechnung herunterladen ({number})',

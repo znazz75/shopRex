@@ -389,6 +389,7 @@ return [
     // ---- Admin: order view ----
     'admin.order_view.not_found'    => 'Commande introuvable.',
     'admin.order_view.flash_updated' => 'Commande mise à jour.',
+    'admin.order_view.flash_updated_error' => 'Impossible de mettre à jour la commande : {message}',
     'admin.order_view.title'          => 'Commande {number}',
     'admin.order_view.heading'         => 'Commande {number}',
     'admin.order_view.download_invoice' => 'Télécharger la facture ({number})',

@@ -128,39 +128,52 @@ final class OrderAdminController extends AdminCrudController
         $newPaymentStatus = in_array($request->post('payment_status', ''), $paymentStatuses, true) ? $request->post('payment_status') : $order['payment_status'];
         $adminNotes = trim((string)$request->post('admin_notes', ''));
 
-        // v2.00 - stamp shipped_at the first time an order transitions to
-        // 'shipped', for Models\WithdrawalRequest::calculateDeadline().
-        // Never overwritten on a later save (a re-save while already
-        // 'shipped' leaves the original ship date intact).
-        if ($newStatus === 'shipped' && $order['status'] !== 'shipped') {
-            $this->pdo->prepare('UPDATE orders SET status = ?, payment_status = ?, admin_notes = ?, shipped_at = NOW() WHERE id = ?')
-                ->execute([$newStatus, $newPaymentStatus, $adminNotes, $id]);
-        } else {
-            $this->pdo->prepare('UPDATE orders SET status = ?, payment_status = ?, admin_notes = ? WHERE id = ?')
-                ->execute([$newStatus, $newPaymentStatus, $adminNotes, $id]);
-        }
-
-        $adminId = $this->admin['id'];
-        // Only log a ledger entry on the actual transition INTO "paid"
-        // (not every save while it's already paid) - otherwise re-saving
-        // the same order repeatedly would double/triple-count its revenue
-        // in Admin -> Finance.
-        if ($newPaymentStatus === 'paid' && $order['payment_status'] !== 'paid') {
-            $this->pdo->prepare('UPDATE payments SET status = "completed" WHERE order_id = ?')->execute([$id]);
-            // Test orders (is_test_account customers) are excluded from
-            // every financial figure by design (see CLAUDE.md's "Test
-            // accounts" section) - so no ledger row is written for them.
-            if (empty($order['is_test_order'])) {
-                $this->pdo->prepare('INSERT INTO transactions (order_id, type, amount, note, created_by) VALUES (?, "sale", ?, "Marked paid by admin", ?)')
-                    ->execute([$id, $order['total'], $adminId]);
+        // The order row itself, its payments row, and a transactions ledger
+        // entry all need to agree with each other - run as one transaction
+        // so a mid-way failure (e.g. the ledger INSERT) can't leave the
+        // order already marked paid/refunded with no matching ledger entry,
+        // or vice versa.
+        $this->pdo->beginTransaction();
+        try {
+            // v2.00 - stamp shipped_at the first time an order transitions to
+            // 'shipped', for Models\WithdrawalRequest::calculateDeadline().
+            // Never overwritten on a later save (a re-save while already
+            // 'shipped' leaves the original ship date intact).
+            if ($newStatus === 'shipped' && $order['status'] !== 'shipped') {
+                $this->pdo->prepare('UPDATE orders SET status = ?, payment_status = ?, admin_notes = ?, shipped_at = NOW() WHERE id = ?')
+                    ->execute([$newStatus, $newPaymentStatus, $adminNotes, $id]);
+            } else {
+                $this->pdo->prepare('UPDATE orders SET status = ?, payment_status = ?, admin_notes = ? WHERE id = ?')
+                    ->execute([$newStatus, $newPaymentStatus, $adminNotes, $id]);
             }
-        }
-        // Same "only on the actual transition" + "skip test orders" logic
-        // as above, but for refunds - amount is stored negative so
-        // FinanceAdminController's SUM() naturally nets refunds against sales.
-        if ($newPaymentStatus === 'refunded' && $order['payment_status'] !== 'refunded' && empty($order['is_test_order'])) {
-            $this->pdo->prepare('INSERT INTO transactions (order_id, type, amount, note, created_by) VALUES (?, "refund", ?, "Refund recorded by admin", ?)')
-                ->execute([$id, -$order['total'], $adminId]);
+
+            $adminId = $this->admin['id'];
+            // Only log a ledger entry on the actual transition INTO "paid"
+            // (not every save while it's already paid) - otherwise re-saving
+            // the same order repeatedly would double/triple-count its revenue
+            // in Admin -> Finance.
+            if ($newPaymentStatus === 'paid' && $order['payment_status'] !== 'paid') {
+                $this->pdo->prepare('UPDATE payments SET status = "completed" WHERE order_id = ?')->execute([$id]);
+                // Test orders (is_test_account customers) are excluded from
+                // every financial figure by design (see CLAUDE.md's "Test
+                // accounts" section) - so no ledger row is written for them.
+                if (empty($order['is_test_order'])) {
+                    $this->pdo->prepare('INSERT INTO transactions (order_id, type, amount, note, created_by) VALUES (?, "sale", ?, "Marked paid by admin", ?)')
+                        ->execute([$id, $order['total'], $adminId]);
+                }
+            }
+            // Same "only on the actual transition" + "skip test orders" logic
+            // as above, but for refunds - amount is stored negative so
+            // FinanceAdminController's SUM() naturally nets refunds against sales.
+            if ($newPaymentStatus === 'refunded' && $order['payment_status'] !== 'refunded' && empty($order['is_test_order'])) {
+                $this->pdo->prepare('INSERT INTO transactions (order_id, type, amount, note, created_by) VALUES (?, "refund", ?, "Refund recorded by admin", ?)')
+                    ->execute([$id, -$order['total'], $adminId]);
+            }
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            $this->flash('error', __('admin.order_view.flash_updated_error', ['message' => $e->getMessage()]));
+            return $this->redirect('/admin/orders/' . $id);
         }
 
         // Reflect the just-saved values back into the in-memory $order

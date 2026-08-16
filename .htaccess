@@ -1,5 +1,5 @@
 # shopRex - root security hardening.
-# Complements the csrf_token check in includes/functions.php (requireCsrf())
+# Complements the csrf_token check in Core\Csrf (requireCsrf())
 # and the SameSite/HttpOnly session cookie set in config/config.php.
 
 # ---------------------------------------------------------------

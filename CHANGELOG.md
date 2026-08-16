@@ -8,6 +8,33 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [3.02] - 2026-08-16
+
+First batch of fixes from a full security/bug audit (in progress).
+
+### Fixed
+- **Stock overselling race condition** in `CheckoutService::placeOrder()`:
+  the pre-checkout stock check read `stock_quantity` before the order's DB
+  transaction opened, then the actual decrement was an unconditional
+  `UPDATE ... SET stock_quantity = stock_quantity - ?`. Two concurrent
+  checkouts for the last unit of an item could both pass the check and both
+  decrement, driving stock negative and overselling. The three
+  stock-decrement statements (`products`, `product_variants`,
+  `product_option_values`) are now conditional
+  (`AND stock_quantity >= ?`) with a `rowCount()` check - a checkout that
+  loses the race now cleanly fails with "just sold out" and rolls back,
+  instead of succeeding on stock that was already gone.
+- **Inconsistent state on a failed admin order-status save**:
+  `OrderAdminController::save()` ran the `orders` UPDATE, the `payments`
+  UPDATE, and the `transactions` ledger INSERT as separate, unwrapped
+  statements - a failure partway through (e.g. the ledger insert) could
+  leave an order marked paid/refunded with no matching ledger entry. Now
+  wrapped in one transaction with rollback + an admin-facing error flash on
+  failure.
+- Stale doc comment in `.htaccess` referencing the now-deleted
+  `includes/functions.php` for the CSRF check - updated to reference
+  `Core\Csrf`.
+
 ## [3.01] - 2026-08-15
 
 Fixes the remaining items from the codebase-wide comment sweep's flagged
