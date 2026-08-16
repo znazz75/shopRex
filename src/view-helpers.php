@@ -191,10 +191,10 @@ if (!function_exists('getCartItemCount')) {
 }
 
 if (!function_exists('getCategoryTree')) {
-    /** Returns the full nested category tree (parents with a 'children' array), as used for the storefront's main navigation. */
+    /** Returns the full nested category tree (parents with a 'children' array), with each name translated into the visitor's current language - as used for the storefront's main navigation. */
     function getCategoryTree(): array
     {
-        return Registry::container()->make(CategoryTreeService::class)->tree();
+        return Registry::container()->make(CategoryTreeService::class)->translatedTree();
     }
 }
 

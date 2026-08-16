@@ -365,6 +365,7 @@ return [
     'admin.categories.confirm_delete'                      => "„{name}“ löschen? Ihre Unterkategorien rücken eine Ebene auf.",
     'admin.categories.none_yet'                              => 'Noch keine Kategorien.',
     'admin.categories.intro_text_label'                        => 'Einleitungstext für die Liste ({lang})',
+    'admin.categories.name_lang_label'                         => 'Name ({lang})',
     'admin.categories.intro_text_hint'                          => 'Optional. Wird oberhalb der Produktliste im Shop angezeigt, wenn diese Kategorie durchsucht wird. Einfacher Text - Zeilenumbrüche bleiben erhalten.',
 
     // ---- Admin: inventory ----

@@ -364,6 +364,7 @@ return [
     'admin.categories.confirm_delete'                      => "Delete '{name}'? Its subcategories will move up one level.",
     'admin.categories.none_yet'                              => 'No categories yet.',
     'admin.categories.intro_text_label'                        => 'Listing intro text ({lang})',
+    'admin.categories.name_lang_label'                         => 'Name ({lang})',
     'admin.categories.intro_text_hint'                          => 'Optional. Shown above the product grid on the storefront when this category is browsed. Plain text - line breaks are preserved.',
 
     // ---- Admin: inventory ----

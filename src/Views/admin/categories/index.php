@@ -3,17 +3,20 @@
  * Admin -> Categories: one combined list+edit-form page. Editing an
  * existing category and creating a new one share this same form; which
  * mode it's in is decided purely by whether $editCategory is set (see the
- * "id" hidden field and the page-title ternary below). Category *names*
- * are not translated per-language (only free-text `intro_text` is - see
- * CLAUDE.md's "Product/option translation" section) - hence the small
- * per-language toolbar that only affects the intro-text field, not the
- * name field.
+ * "id" hidden field and the page-title ternary below). Both the name and
+ * `intro_text` are per-language (see CLAUDE.md's "Product/option
+ * translation" section) - the default-language name lives on the
+ * category's own row (categories.name/slug, required, drives the URL);
+ * every other language's name is an optional translation, same as
+ * `intro_text` already was - hence the shared per-language toolbar.
  *
  * @var array       $errors       Validation error messages to show above the form (e.g. "Name is required").
- * @var array       $availableLangs Enabled languages as [code => label], for the intro-text language tabs.
- * @var string      $lang         Which language's intro-text is currently being edited/shown (a query-string driven tab, not the admin UI language).
+ * @var array       $availableLangs Enabled languages as [code => label], for the name/intro-text language tabs.
+ * @var string      $lang         Which language's name/intro-text is currently being edited/shown (a query-string driven tab, not the admin UI language).
+ * @var string      $defaultLang  The shop's default language - the Name field is required and drives the slug only on this tab; any other tab's name is an optional translation.
  * @var array|null  $editCategory The category being edited, or null when the form is in "create new" mode.
  * @var string      $introText    The intro_text value for $editCategory in $lang specifically (already resolved for this language, not the raw row).
+ * @var string      $nameForLang  The Name field's value for $lang specifically - categories.name on the default-language tab, that language's (possibly blank) translation otherwise.
  * @var array       $flatTree     Every category, flattened from its parent/child tree into a single list with a 'depth' key already computed, so nesting can be shown with indentation instead of a real nested <ul>.
  * @var array       $counts       Map of category id => number of products directly assigned to it (not counting products in child categories).
  * Direct port of admin/categories.php's body.
@@ -41,7 +44,11 @@
     <input type="hidden" name="id" value="<?= e($editCategory['id'] ?? '') ?>">
     <input type="hidden" name="language" value="<?= e($lang) ?>">
     <div class="form-grid">
-      <div class="form-group"><label for="name"><?= e(__('admin.products.name')) ?></label><input type="text" id="name" name="name" required value="<?= e($editCategory['name'] ?? '') ?>"></div>
+      <div class="form-group">
+        <?php /* Required + drives the slug only on the default-language tab; on any other tab it's an optional translation (blank falls back to the default name on the storefront), same as intro_text's label already indicates via the {lang} token. */ ?>
+        <label for="name"><?= $lang === $defaultLang ? e(__('admin.products.name')) : e(__('admin.categories.name_lang_label', ['lang' => $availableLangs[$lang]])) ?></label>
+        <input type="text" id="name" name="name" <?= $lang === $defaultLang ? 'required' : '' ?> value="<?= e($nameForLang) ?>">
+      </div>
       <div class="form-group">
         <label for="parent_id"><?= e(__('admin.categories.parent_category')) ?></label>
         <select id="parent_id" name="parent_id">

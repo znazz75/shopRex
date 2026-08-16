@@ -11,9 +11,12 @@ use ShopRex\Services\SettingsRepository;
 /**
  * Direct port of admin/categories.php. Manages the product category tree
  * (parent/child nesting, one row per category) plus each category's
- * per-language `intro_text` (see CLAUDE.md's "Product/option translation"
- * section - unlike product names, a category's *name* is NOT translated,
- * only its intro text is, via the sibling `category_translations` table).
+ * per-language `name`/`intro_text` (see CLAUDE.md's "Product/option
+ * translation" section - the default-language name always lives on
+ * `categories.name`/`slug`, exactly like products; every other language's
+ * name lives in the sibling `category_translations` table, same table
+ * `intro_text` already used - see Services\CategoryTreeService::overlayNames()
+ * for the storefront-side read overlay this feeds).
  */
 final class CategoryAdminController extends AdminCrudController
 {
@@ -46,9 +49,12 @@ final class CategoryAdminController extends AdminCrudController
             $lang = 'en';
         }
 
+        $defaultLang = $this->settings->get('default_language', 'en');
+
         $editId = $request->get('edit') !== null ? (int)$request->get('edit') : null;
         $editCategory = null;
         $introText = '';
+        $nameForLang = '';
         if ($editId) {
             $stmt = $this->pdo->prepare('SELECT * FROM categories WHERE id = ?');
             $stmt->execute([$editId]);
@@ -57,13 +63,16 @@ final class CategoryAdminController extends AdminCrudController
                 $this->flash('error', __('admin.categories.not_found'));
                 return $this->redirect('/admin/categories');
             }
-            // Category name lives on the `categories` row itself (not
-            // translated), but intro_text is per-language, so it's a
-            // separate lookup against category_translations for whichever
-            // language tab is currently active.
-            $introStmt = $this->pdo->prepare('SELECT intro_text FROM category_translations WHERE category_id = ? AND language = ?');
-            $introStmt->execute([$editId, $lang]);
-            $introText = (string)($introStmt->fetchColumn() ?: '');
+            // On the default-language tab, the Name field shows the raw
+            // categories.name column (the "real" name that also drives the
+            // slug); on any other tab it shows that language's translation
+            // (blank if not yet translated) - same per-tab split intro_text
+            // already has, via the same translationsForCategory() lookup.
+            $categoryTranslations = $this->categories->translationsForCategory($editId);
+            $introText = (string)($categoryTranslations[$lang]['intro_text'] ?? '');
+            $nameForLang = $lang === $defaultLang
+                ? (string)$editCategory['name']
+                : (string)($categoryTranslations[$lang]['name'] ?? '');
         }
 
         $flatTree = $this->categories->flatten($this->categories->tree());
@@ -77,10 +86,10 @@ final class CategoryAdminController extends AdminCrudController
             }
         }
 
-        return $this->render('categories/index', [...compact('errors', 'availableLangs', 'lang', 'editCategory', 'introText', 'flatTree', 'counts'), 'pageTitle' => __('admin.categories')]);
+        return $this->render('categories/index', [...compact('errors', 'availableLangs', 'lang', 'defaultLang', 'editCategory', 'introText', 'nameForLang', 'flatTree', 'counts'), 'pageTitle' => __('admin.categories')]);
     }
 
-    /** Handles delete plus create/update (name/description/parent + the active language's intro text) for a category, all posted to the same route. */
+    /** Handles delete plus create/update (name/description/parent + the active language's name/intro text) for a category, all posted to the same route. */
     public function save(Request $request): Response
     {
         if ($csrfFailure = $this->requireCsrf()) {
@@ -111,8 +120,16 @@ final class CategoryAdminController extends AdminCrudController
         $parentId = $request->post('parent_id', '') !== '' ? (int)$request->post('parent_id') : null;
         $postLang = array_key_exists($request->post('language', ''), $availableLangs) ? $request->post('language') : 'en';
         $introText = trim((string)$request->post('intro_text', ''));
+        $defaultLang = $this->settings->get('default_language', 'en');
+        // Brand-new categories always define their name on the default-
+        // language tab (that's the only tab shown when creating, and it's
+        // the name categories.name/slug are derived from) - an existing
+        // category's name is only required when saving the default-
+        // language tab, since a translation is optional (blank falls back
+        // to the default name on the storefront, same as products).
+        $isDefaultLangSave = !$id || $postLang === $defaultLang;
 
-        if ($name === '') {
+        if ($isDefaultLangSave && $name === '') {
             $errors[] = __('admin.categories.name_required');
         }
         if ($id && $parentId === $id) {
@@ -126,33 +143,56 @@ final class CategoryAdminController extends AdminCrudController
         }
 
         if (!$errors) {
-            // Slug is derived from the name automatically (not admin-
-            // editable) - it's what shows up in the category's URL.
-            $slug = \ShopRex\Support\Slugger::slug($name);
             try {
-                if ($id) {
-                    $stmt = $this->pdo->prepare('UPDATE categories SET name=?, slug=?, description=?, parent_id=? WHERE id=?');
-                    $stmt->execute([$name, $slug, $description, $parentId, $id]);
-                    $this->flash('success', __('admin.categories.flash_updated'));
+                if ($isDefaultLangSave) {
+                    // Slug is derived from the name automatically (not
+                    // admin-editable) - it's what shows up in the
+                    // category's URL. Only the default-language save
+                    // touches name/slug on the categories row itself.
+                    $slug = \ShopRex\Support\Slugger::slug($name);
+                    if ($id) {
+                        $stmt = $this->pdo->prepare('UPDATE categories SET name=?, slug=?, description=?, parent_id=? WHERE id=?');
+                        $stmt->execute([$name, $slug, $description, $parentId, $id]);
+                        $this->flash('success', __('admin.categories.flash_updated'));
+                    } else {
+                        $stmt = $this->pdo->prepare('INSERT INTO categories (name, slug, description, parent_id) VALUES (?, ?, ?, ?)');
+                        $stmt->execute([$name, $slug, $description, $parentId]);
+                        $id = (int)$this->pdo->lastInsertId();
+                        $this->flash('success', __('admin.categories.flash_added'));
+                    }
+                    // Upsert the intro text row for the default language
+                    // too (intro_text is always per-language, including
+                    // the default one - unlike name, it has no "lives on
+                    // the main row" home) - name is deliberately left out
+                    // of this statement so category_translations never
+                    // gets a default-language name row (mirrors
+                    // product_translations' own convention).
+                    $introStmt = $this->pdo->prepare(
+                        'INSERT INTO category_translations (category_id, language, intro_text) VALUES (?, ?, ?)
+                         ON DUPLICATE KEY UPDATE intro_text = VALUES(intro_text)'
+                    );
+                    $introStmt->execute([$id, $postLang, $introText !== '' ? $introText : null]);
                 } else {
-                    $stmt = $this->pdo->prepare('INSERT INTO categories (name, slug, description, parent_id) VALUES (?, ?, ?, ?)');
-                    $stmt->execute([$name, $slug, $description, $parentId]);
-                    $id = (int)$this->pdo->lastInsertId();
-                    $this->flash('success', __('admin.categories.flash_added'));
+                    // Non-default-language tab: name/slug on the
+                    // categories row are left untouched; description/
+                    // parent_id still update since the form always
+                    // resubmits their current (language-agnostic) values
+                    // regardless of which tab is active.
+                    $stmt = $this->pdo->prepare('UPDATE categories SET description=?, parent_id=? WHERE id=?');
+                    $stmt->execute([$description, $parentId, $id]);
+                    $this->flash('success', __('admin.categories.flash_updated'));
+
+                    // Name here is optional (blank means "not translated
+                    // yet", falls back to the default name on the
+                    // storefront) - upserted alongside intro_text in the
+                    // same statement, since both belong to this one
+                    // (category_id, language) row.
+                    $translationStmt = $this->pdo->prepare(
+                        'INSERT INTO category_translations (category_id, language, name, intro_text) VALUES (?, ?, ?, ?)
+                         ON DUPLICATE KEY UPDATE name = VALUES(name), intro_text = VALUES(intro_text)'
+                    );
+                    $translationStmt->execute([$id, $postLang, $name !== '' ? $name : null, $introText !== '' ? $introText : null]);
                 }
-                // Upsert (INSERT ... ON DUPLICATE KEY UPDATE) for the
-                // intro text row, since only one language is edited per
-                // submit - a brand-new category has no existing translation
-                // row yet, while an existing one already has one for other
-                // languages, so this single statement handles both cases.
-                // A blank textarea is stored as NULL rather than an empty
-                // string, so the storefront can distinguish "no intro text
-                // for this language" cleanly.
-                $introStmt = $this->pdo->prepare(
-                    'INSERT INTO category_translations (category_id, language, intro_text) VALUES (?, ?, ?)
-                     ON DUPLICATE KEY UPDATE intro_text = VALUES(intro_text)'
-                );
-                $introStmt->execute([$id, $postLang, $introText !== '' ? $introText : null]);
                 return $this->redirect('/admin/categories?lang=' . urlencode($postLang));
             } catch (\PDOException $e) {
                 // A duplicate-key error here means the generated slug
@@ -167,7 +207,13 @@ final class CategoryAdminController extends AdminCrudController
         }
 
         $lang = $postLang;
+        // Re-display exactly what was submitted, on whichever tab was
+        // active - $name here is the just-typed value for THAT tab (either
+        // the default name or a translation), not necessarily
+        // categories.name, so it's passed straight through as nameForLang
+        // rather than re-derived.
         $editCategory = ['id' => $id, 'name' => $name, 'description' => $description, 'parent_id' => $parentId];
+        $nameForLang = $name;
         $flatTree = $this->categories->flatten($this->categories->tree());
         $counts = [];
         foreach ($this->pdo->query('SELECT category_id, COUNT(*) AS cnt FROM products GROUP BY category_id')->fetchAll() as $row) {
@@ -176,6 +222,6 @@ final class CategoryAdminController extends AdminCrudController
             }
         }
 
-        return $this->render('categories/index', [...compact('errors', 'availableLangs', 'lang', 'editCategory', 'introText', 'flatTree', 'counts'), 'pageTitle' => __('admin.categories')]);
+        return $this->render('categories/index', [...compact('errors', 'availableLangs', 'lang', 'defaultLang', 'editCategory', 'introText', 'nameForLang', 'flatTree', 'counts'), 'pageTitle' => __('admin.categories')]);
     }
 }

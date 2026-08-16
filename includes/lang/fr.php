@@ -365,6 +365,7 @@ return [
     'admin.categories.confirm_delete'                      => "Supprimer « {name} » ? Ses sous-catégories remonteront d'un niveau.",
     'admin.categories.none_yet'                              => 'Aucune catégorie pour le moment.',
     'admin.categories.intro_text_label'                        => 'Texte d\'introduction de la liste ({lang})',
+    'admin.categories.name_lang_label'                         => 'Nom ({lang})',
     'admin.categories.intro_text_hint'                          => "Facultatif. Affiché au-dessus de la grille de produits sur la boutique lorsque cette catégorie est consultée. Texte brut - les sauts de ligne sont conservés.",
 
     // ---- Admin: inventory ----

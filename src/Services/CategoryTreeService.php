@@ -41,7 +41,17 @@ final class CategoryTreeService
         return $branch;
     }
 
-    /** The full category tree, root categories first with their descendants nested under 'children' - built once per request and cached. */
+    /**
+     * The full category tree, root categories first with their descendants
+     * nested under 'children' - built once per request and cached. Names
+     * here are always the DEFAULT language (the raw categories.name
+     * column) - this is the method every ADMIN picker uses
+     * (Controllers\Admin\CategoryAdminController/MenuAdminController/
+     * ProductEditController), where showing a translated name would be
+     * actively wrong (an admin managing categories shouldn't see names
+     * shift depending on their own UI language). Storefront callers that
+     * need a translated name should use translatedTree() below instead.
+     */
     public function tree(): array
     {
         if ($this->treeCache === null) {
@@ -49,6 +59,31 @@ final class CategoryTreeService
             $this->treeCache = $this->buildTree($rows);
         }
         return $this->treeCache;
+    }
+
+    /**
+     * Same tree as tree(), but with every node's 'name' overlaid with its
+     * translation into $lang (falling back to the default-language name
+     * where no translation exists yet) - for storefront consumers only
+     * (the sidebar theme's nav widget, Controllers\Storefront\CatalogController's
+     * subcategory-chips lookup). Does not touch tree()'s own cache - this
+     * is a translated copy built fresh from it each call.
+     */
+    public function translatedTree(?string $lang = null): array
+    {
+        $lang = $lang ?? I18n::current();
+        $flat = $this->flatten($this->tree());
+        $this->overlayNames($flat, $lang);
+
+        // Re-nest: flatten() already dropped 'children'/added 'depth', so
+        // rebuild the tree structure from the (now-translated) flat list
+        // rather than trying to walk the original nested tree and patch
+        // names in place.
+        foreach ($flat as &$row) {
+            unset($row['depth']);
+        }
+        unset($row);
+        return $this->buildTree($flat);
     }
 
     /** Collapses a nested tree back into a flat, depth-first list with a 'depth' field added to each row - used for rendering an indented <select> or admin list where nesting needs to show as indentation rather than actual nesting. */
@@ -98,7 +133,14 @@ final class CategoryTreeService
         return $ids;
     }
 
-    /** Ancestor chain from root down to (and including) $categoryId - for breadcrumbs. */
+    /**
+     * Ancestor chain from root down to (and including) $categoryId - for
+     * breadcrumbs. Only ever called from storefront code
+     * (Controllers\Storefront\CatalogController/ProductController), so
+     * names are always overlaid with the visitor's current language
+     * (falling back to the default-language name where untranslated) -
+     * unlike tree(), there's no admin caller here that needs the raw name.
+     */
     public function path(?int $categoryId): array
     {
         if (!$categoryId) {
@@ -121,15 +163,22 @@ final class CategoryTreeService
             $parentId = $current['parent_id'] !== null ? (int)$current['parent_id'] : null;
             $current = $parentId ? ($byId[$parentId] ?? null) : null;
         }
+        $this->overlayNames($path, I18n::current());
         return $path;
     }
 
-    /** Backs the /category/{slug} route - see Controllers\Storefront\CatalogController::category(). */
+    /** Backs the /category/{slug} route - see Controllers\Storefront\CatalogController::category(). Storefront-only caller, so the name is overlaid with the visitor's current language same as path() above. */
     public function findBySlug(string $slug): ?array
     {
         $stmt = $this->pdo->prepare('SELECT * FROM categories WHERE slug = ?');
         $stmt->execute([$slug]);
-        return $stmt->fetch() ?: null;
+        $category = $stmt->fetch();
+        if (!$category) {
+            return null;
+        }
+        $rows = [$category];
+        $this->overlayNames($rows, I18n::current());
+        return $rows[0];
     }
 
     /** Canonical URL for a category - used everywhere a category link is generated (menus, breadcrumbs, subcategory chips). */
@@ -182,5 +231,52 @@ final class CategoryTreeService
         // Treats a saved-but-blank/whitespace-only intro the same as "not
         // set", so an empty <p></p> block doesn't get rendered.
         return ($text !== null && trim($text) !== '') ? $text : null;
+    }
+
+    /**
+     * Overlays each row's 'name' with its category_translations.name
+     * translation into $lang, in place - mirrors
+     * Services\TranslationOverlay::applyToProduct()'s per-field-fallback
+     * behavior: a row is only touched when a non-empty translation
+     * actually exists for it, otherwise it keeps whatever name it already
+     * had (the default-language categories.name column). A no-op when
+     * $lang is the shop's own default language, same as
+     * TranslationOverlay does for products - the default language's name
+     * already lives on the row itself, there's nothing to overlay.
+     *
+     * @param array $rows Flat list of category rows, each needing an 'id' key - modified by reference.
+     */
+    public function overlayNames(array &$rows, string $lang): void
+    {
+        if (!$rows || $lang === $this->settings->get('default_language', 'en')) {
+            return;
+        }
+
+        $ids = array_column($rows, 'id');
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->pdo->prepare(
+            "SELECT category_id, name FROM category_translations WHERE language = ? AND category_id IN ($placeholders) AND name IS NOT NULL AND name != ''"
+        );
+        $stmt->execute([$lang, ...$ids]);
+        $namesByCategoryId = array_column($stmt->fetchAll(), 'name', 'category_id');
+
+        foreach ($rows as &$row) {
+            if (!empty($namesByCategoryId[$row['id']])) {
+                $row['name'] = $namesByCategoryId[$row['id']];
+            }
+        }
+        unset($row);
+    }
+
+    /** Every language's (name, intro_text) row for $categoryId, keyed by language - for the admin edit form's per-language tabs. Mirrors Services\TranslationOverlay::translationsForProduct(). */
+    public function translationsForCategory(int $categoryId): array
+    {
+        $stmt = $this->pdo->prepare('SELECT language, name, intro_text FROM category_translations WHERE category_id = ?');
+        $stmt->execute([$categoryId]);
+        $byLang = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $byLang[$row['language']] = $row;
+        }
+        return $byLang;
     }
 }

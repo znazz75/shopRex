@@ -6,6 +6,7 @@ use ShopRex\Core\Container;
 use ShopRex\Core\Controller;
 use ShopRex\Core\Request;
 use ShopRex\Core\Response;
+use ShopRex\Services\CategoryTreeService;
 use ShopRex\Services\I18n;
 use ShopRex\Services\PerPageResolver;
 use ShopRex\Services\SettingsRepository;
@@ -22,6 +23,7 @@ use ShopRex\Services\TranslationOverlay;
 final class SearchController extends Controller
 {
     private readonly \PDO $pdo; // Raw DB handle for the hand-written search queries below.
+    private readonly CategoryTreeService $categories; // Overlays per-language category name onto matched category rows below (see CLAUDE.md's "Product/option translation").
     private readonly TranslationOverlay $translations; // Overlays per-language product name/description onto the default-language row (see CLAUDE.md's "Product/option translation").
     private readonly PerPageResolver $perPage; // Resolves how many results to show per page (visitor override vs. site default).
     private readonly SettingsRepository $settings; // Used here to read the site's default language for the translation-join decision below.
@@ -30,6 +32,7 @@ final class SearchController extends Controller
     {
         parent::__construct($request, $container);
         $this->pdo = $container->make(\PDO::class);
+        $this->categories = $container->make(CategoryTreeService::class);
         $this->translations = $container->make(TranslationOverlay::class);
         $this->perPage = $container->make(PerPageResolver::class);
         $this->settings = $container->make(SettingsRepository::class);
@@ -58,16 +61,32 @@ final class SearchController extends Controller
             // match/not match as literal text).
             $like = "%$query%";
 
-            $catStmt = $this->pdo->prepare('SELECT * FROM categories WHERE name LIKE ? OR description LIKE ? ORDER BY name');
-            $catStmt->execute([$like, $like]);
-            $categories = $catStmt->fetchAll();
-
             // Only join the per-language translations table when the
             // visitor's language differs from the shop's default - the
-            // default language's own text already lives on `products`, so
-            // there'd be nothing extra to search/sort by otherwise.
+            // default language's own text already lives on `products`/
+            // `categories`, so there'd be nothing extra to search/sort by
+            // otherwise.
             $currentLang = I18n::current();
             $defaultLang = $this->settings->get('default_language', 'en');
+
+            // Same join-only-when-needed pattern as the product search
+            // below, mirrored for categories: search the translated name
+            // too when one exists, so a category found only by its
+            // translated name still turns up.
+            $catTranslateJoin = $currentLang !== $defaultLang ? 'LEFT JOIN category_translations ct ON ct.category_id = c.id AND ct.language = ?' : '';
+            $catWhere = '(c.name LIKE ? OR c.description LIKE ?' . ($catTranslateJoin ? ' OR ct.name LIKE ?' : '') . ')';
+            $catParams = [$like, $like];
+            if ($catTranslateJoin) {
+                $catParams[] = $like;
+            }
+            $catStmt = $this->pdo->prepare("SELECT c.* FROM categories c $catTranslateJoin WHERE $catWhere ORDER BY c.name");
+            $catStmt->execute([...($catTranslateJoin ? [$currentLang] : []), ...$catParams]);
+            $categories = $catStmt->fetchAll();
+            // Re-run each row through the same name overlay CategoryTreeService
+            // uses elsewhere, so a matched category displays translated too,
+            // not just what was matched against in SQL above.
+            $this->categories->overlayNames($categories, $currentLang);
+
             $translateJoin = $currentLang !== $defaultLang ? 'LEFT JOIN product_translations pt ON pt.product_id = p.id AND pt.language = ?' : '';
             $joinParams = $translateJoin ? [$currentLang] : [];
             $nameSortSql = $translateJoin ? 'COALESCE(pt.name, p.name)' : 'p.name';

@@ -8,6 +8,40 @@ bumps the version by exactly `0.01` (`1.00` → `1.01` → `1.02` → … → `1
 → `1.11` → …), tracked in the [VERSION](VERSION) file and mirrored in the
 `SHOPREX_VERSION` constant in `config/config.php`.
 
+## [3.09] - 2026-08-16
+
+New feature: multilingual category names.
+
+### Added
+- Category *names* are now translatable, mirroring how product names
+  already work (`Services\TranslationOverlay`): the `category_translations`
+  table (previously only holding per-language `intro_text`) gained a
+  `name` column. The default language's name still lives on
+  `categories.name`/`slug` (required, drives the URL); every other
+  language's name is an optional translation - blank falls back to the
+  default name on the storefront, same as an untranslated product name.
+- Admin -> Categories' existing per-language tab bar (previously only
+  affecting `intro_text`) now also edits the Name field per tab.
+- `Services\CategoryTreeService` gained `translatedTree()` (a
+  translated-name copy of `tree()`, for storefront consumers),
+  `overlayNames()` (the shared per-row translation overlay, mirroring
+  `TranslationOverlay::applyToProduct()`), and `translationsForCategory()`
+  (every language's name/intro_text for the admin edit form). `tree()`
+  itself is unchanged (still raw/default-language names) since every
+  existing caller is an admin picker (Categories/Menus/Products) that
+  should not show names shifting with the admin's own UI language.
+  `path()`/`findBySlug()` (storefront-only callers) now always overlay.
+- Storefront category browsing (category page heading/breadcrumbs,
+  subcategory chips, product-page breadcrumbs, the sidebar theme's nav
+  widget) and search results now show the visitor's language's
+  translated category name where one exists.
+
+### Changed
+- `sql/schema.sql`: `category_translations` gained the `name` column.
+  Existing installs need `ALTER TABLE category_translations ADD COLUMN
+  name VARCHAR(150) NULL;` by hand (no migrations system - see
+  CLAUDE.md's "No upgrade path from pre-3.00 installs").
+
 ## [3.08] - 2026-08-16
 
 Documentation fix - no code changes.

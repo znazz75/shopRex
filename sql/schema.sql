@@ -24,18 +24,24 @@ CREATE TABLE categories (
     INDEX idx_categories_parent (parent_id)
 ) ENGINE=InnoDB;
 
--- Optional per-language "intro text" shown above the product grid on the
--- storefront when this category (or one of its descendants, via
--- index.php?category=) is being browsed. Unlike categories.name/slug/description
--- (single-catalog, not translated - see README's i18n scope note), this one
--- field is deliberately structured per-language, the same (category_id, language)
--- pattern the `pages` table uses for (slug, language) - one row per language,
--- looked up with an English/default-language fallback (see getCategoryIntroText()
--- in includes/functions.php).
+-- Per-language overrides for a category - one row per (category_id,
+-- language), same pattern the `pages` table uses for (slug, language).
+-- `name` mirrors products.name/product_translations.name: categories.name
+-- always holds the shop's DEFAULT-language name (unchanged, still what
+-- drives the slug); this table holds every OTHER language's name, and is
+-- looked up with a fallback to the default name when a translation hasn't
+-- been entered yet - see Services\CategoryTreeService::overlayNames() and
+-- Services\TranslationOverlay::applyToProduct() for the equivalent product
+-- logic this mirrors. `intro_text` is the older field here (an optional
+-- blurb shown above the product grid when browsing this category) and
+-- keeps its own separate fallback-to-nothing behavior (blank is a valid
+-- "no intro text" state, unlike name which always falls back to the
+-- default-language name rather than ever rendering blank).
 CREATE TABLE category_translations (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     category_id INT UNSIGNED NOT NULL,
     language VARCHAR(5) NOT NULL,
+    name VARCHAR(150) NULL,
     intro_text TEXT NULL,
     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
     UNIQUE KEY uniq_category_lang (category_id, language)

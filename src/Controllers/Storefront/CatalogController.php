@@ -131,7 +131,10 @@ final class CatalogController extends Controller
             $params = array_merge($params, $descendantIds);
 
             $categoryPath = $this->categories->path($categoryId);
-            $selectedNode = $this->categories->findNode($this->categories->tree(), $categoryId);
+            // translatedTree(), not tree() - this is a storefront display
+            // (the current category's subcategory chips), so the visitor's
+            // language should be reflected, unlike an admin picker.
+            $selectedNode = $this->categories->findNode($this->categories->translatedTree(), $categoryId);
             $subcategories = $selectedNode['children'] ?? [];
         }
         if ($search !== '') {
